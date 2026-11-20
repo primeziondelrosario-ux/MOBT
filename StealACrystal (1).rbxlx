@@ -973,6 +973,14 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local ServerStorage = game:GetService("ServerStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
+
+local function traceback(err)
+if debug and debug.traceback then
+return debug.traceback(tostring(err), 2)
+end
+return tostring(err)
+end
+
 local STARTUP_TIMEOUT = 25
 
 local started = false
@@ -1141,6 +1149,7 @@ end
 
 
 local function start()
+print("[Steal a Crystal] starting: checking files")
 local problems = structureProblems()
 if #problems > 0 then
 fail("Some game files are missing or the wrong type:\n- " .. table.concat(problems, "\n- ")
@@ -1148,6 +1157,7 @@ fail("Some game files are missing or the wrong type:\n- " .. table.concat(proble
 return
 end
 
+print("[Steal a Crystal] starting: loading modules")
 local Shared = ReplicatedStorage.Shared
 local Server = ServerScriptService.Server
 
@@ -1171,13 +1181,15 @@ ctx.TrailSvc = require(Server.TrailSvc)
 ctx.Admin = require(Server.AdminSvc)
 local MapBuilder = require(Server.MapBuilder)
 
+print("[Steal a Crystal] starting: building the world")
 local map = MapBuilder.build()
 ctx.Map = map
+print("[Steal a Crystal] starting: starting services")
 
 
 local initErrors = {}
 local function step(name, fn)
-local ok, err = xpcall(fn, debug.traceback)
+local ok, err = xpcall(fn, traceback)
 if not ok then
 warn("[Steal a Crystal] " .. name .. " failed to start:\n" .. tostring(err))
 table.insert(initErrors, name .. ": " .. shortError(err))
@@ -1263,7 +1275,7 @@ player:LoadCharacter()
 end
 
 local function onPlayerAdded(player)
-local ok, err = xpcall(setupPlayer, debug.traceback, player)
+local ok, err = xpcall(setupPlayer, traceback, player)
 if not ok then
 warn("[Steal a Crystal] could not set up " .. player.Name .. ":\n" .. tostring(err))
 showMessage(player, "Could not set you up:\n" .. shortError(err))
@@ -1325,7 +1337,7 @@ fail("Start-up is taking longer than " .. STARTUP_TIMEOUT .. " seconds, so somet
 end
 end)
 
-local ok, err = xpcall(start, debug.traceback)
+local ok, err = xpcall(start, traceback)
 if not ok then
 fail("Start-up error:\n" .. shortError(err))
 end
@@ -2263,6 +2275,21 @@ local Config = require(Shared:WaitForChild("Config"))
 local Crystals = require(Shared:WaitForChild("Crystals"))
 local Trails = require(Shared:WaitForChild("Trails"))
 
+
+local function clock()
+if os and os.clock then
+return os.clock()
+end
+return workspace:GetServerTimeNow()
+end
+
+local function unixNow()
+if os and os.time then
+return os.time()
+end
+return math.floor(workspace:GetServerTimeNow())
+end
+
 local Data = {}
 
 local profiles = {}
@@ -2350,8 +2377,8 @@ Data.save(player)
 pending -= 1
 end)
 end
-local t0 = os.clock()
-while pending > 0 and os.clock() - t0 < 25 do
+local t0 = clock()
+while pending > 0 and clock() - t0 < 25 do
 task.wait()
 end
 end)
@@ -2518,7 +2545,7 @@ Strength = profile.Strength,
 Trails = table.clone(profile.Trails),
 Equipped = profile.Equipped,
 Crystals = profile.Crystals,
-SavedAt = os.time(),
+SavedAt = unixNow(),
 }
 local ok, err = pcall(function()
 store:UpdateAsync(keyFor(player), function()
@@ -5449,6 +5476,14 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 
+
+local function traceback(err)
+if debug and debug.traceback then
+return debug.traceback(tostring(err), 2)
+end
+return tostring(err)
+end
+
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -5511,7 +5546,7 @@ messageBody.Text = "Steal a Crystal (screen side):\n" .. table.concat(messageLin
 end
 
 local function safe(label, fn)
-local ok, err = xpcall(fn, debug.traceback)
+local ok, err = xpcall(fn, traceback)
 if not ok then
 warn("[Steal a Crystal] " .. label .. " failed:\n" .. tostring(err))
 showProblem("- " .. label .. " failed: " .. string.sub(tostring(err), 1, 260))
@@ -5522,6 +5557,7 @@ end
 
 
 
+print("[Steal a Crystal] client starting")
 local loaded = false
 task.delay(25, function()
 if not loaded then
@@ -5580,5 +5616,6 @@ end
 end
 
 loaded = true
+print("[Steal a Crystal] client ready")
 ]]></ProtectedString></Properties></Item></Item><Item class="StarterCharacterScripts" referent="RBX37"><Properties><string name="Name">StarterCharacterScripts</string></Properties></Item></Item>
 </roblox>
