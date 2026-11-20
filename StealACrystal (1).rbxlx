@@ -1,0 +1,5584 @@
+<?xml version="1.0" encoding="utf-8"?>
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+<Meta name="ExplicitAutoJoints">true</Meta>
+<Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><bool name="StreamingEnabled">false</bool></Properties></Item>
+<Item class="Players" referent="RBX2"><Properties><string name="Name">Players</string><int name="MaxPlayersInternal">6</int><int name="PreferredPlayersInternal">6</int></Properties></Item>
+<Item class="Lighting" referent="RBX3"><Properties><string name="Name">Lighting</string></Properties></Item>
+<Item class="ReplicatedStorage" referent="RBX12"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX11"><Properties><string name="Name">Shared</string></Properties><Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+local Config = {}
+
+Config.GameName = "Steal a Crystal"
+
+
+
+
+
+
+
+Config.AdminUserIds = {}
+
+
+
+
+Config.DataStoreName = "StealACrystal_v1"
+Config.AutoSaveSeconds = 60
+
+
+
+
+Config.PlotCount = 6
+Config.PlotRingRadius = 150
+Config.PlotSize = 64
+Config.PlotTop = 1.2
+Config.GateWidth = 16
+Config.PedestalsPerPlot = 8
+Config.IslandRadius = 262
+Config.FieldRadius = 100
+Config.PlazaRadius = 32
+Config.KickWhenFull = true
+
+Config.PlotColors = {
+Color3.fromRGB(255, 99, 120),
+Color3.fromRGB(255, 170, 70),
+Color3.fromRGB(110, 220, 120),
+Color3.fromRGB(80, 200, 255),
+Color3.fromRGB(150, 120, 255),
+Color3.fromRGB(255, 120, 220),
+}
+
+
+
+
+Config.StartGems = 0
+Config.StartStrength = 5
+Config.BaseWalkSpeed = 18
+Config.BaseJumpPower = 50
+Config.MinCarrySpeedFactor = 0.45
+Config.CarrySlowdown = 0.55
+Config.FieldMaxCrystals = 36
+Config.FieldSpawnInterval = 2.5
+Config.IncomeScale = 0.25
+Config.LockDuration = 45
+Config.LockCooldown = 30
+Config.CarryMaxHeight = 6
+Config.DisplayMaxHeight = 5.5
+Config.GrabDistanceSlack = 10
+
+
+
+
+
+
+Config.GymStations = {
+{ Id = "Dumbbells", Name = "Dumbbell Curls", Gain = 1,  MinStrength = 0,    Plates = 1, Color = Color3.fromRGB(110, 220, 255) },
+{ Id = "Bench",     Name = "Bench Press",    Gain = 3,  MinStrength = 60,   Plates = 2, Color = Color3.fromRGB(120, 235, 150) },
+{ Id = "Squat",     Name = "Squat Rack",     Gain = 9,  MinStrength = 500,  Plates = 3, Color = Color3.fromRGB(255, 190, 80)  },
+{ Id = "Deadlift",  Name = "Deadlift Bar",   Gain = 25, MinStrength = 2500, Plates = 4, Color = Color3.fromRGB(255, 100, 130) },
+}
+Config.GymBarPeriod = 1.5
+Config.GymPerfectZone = 0.13
+Config.GymGoodZone = 0.34
+Config.GymPerfectMult = 2
+Config.GymGoodMult = 1
+Config.GymComboBonus = 0.10
+Config.GymComboMax = 10
+Config.GymRepCooldown = 0.55
+
+
+function Config.GymBarPosition(t)
+local phase = (t % Config.GymBarPeriod) / Config.GymBarPeriod
+if phase < 0.5 then
+return phase * 2
+end
+return (1 - phase) * 2
+end
+
+
+function Config.GymGrade(pos)
+local d = math.abs(pos - 0.5)
+if d <= Config.GymPerfectZone / 2 then
+return "Perfect"
+elseif d <= Config.GymGoodZone / 2 then
+return "Good"
+end
+return "Miss"
+end
+
+return Config
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX5"><Properties><string name="Name">Crystals</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local Config = require(script.Parent.Config)
+
+local Crystals = {}
+
+Crystals.Rarities = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic" }
+
+Crystals.RarityColors = {
+Common = Color3.fromRGB(200, 208, 222),
+Uncommon = Color3.fromRGB(110, 235, 140),
+Rare = Color3.fromRGB(95, 175, 255),
+Epic = Color3.fromRGB(195, 125, 255),
+Legendary = Color3.fromRGB(255, 205, 75),
+Mythic = Color3.fromRGB(255, 85, 115),
+}
+
+Crystals.RarityIndex = {}
+for i, name in Crystals.Rarities do
+Crystals.RarityIndex[name] = i
+end
+
+
+Crystals.Types = {
+{ Id = "Quartz",    Name = "Quartz",    Rarity = "Common",    Color = Color3.fromRGB(205, 225, 245), WeightMin = 1,    WeightMax = 15,   Chance = 34,  Mult = 1 },
+{ Id = "Citrine",   Name = "Citrine",   Rarity = "Common",    Color = Color3.fromRGB(255, 196, 70),  WeightMin = 1,    WeightMax = 15,   Chance = 22,  Mult = 1 },
+{ Id = "Amethyst",  Name = "Amethyst",  Rarity = "Uncommon",  Color = Color3.fromRGB(170, 105, 240), WeightMin = 12,   WeightMax = 55,   Chance = 16,  Mult = 1.6 },
+{ Id = "Emerald",   Name = "Emerald",   Rarity = "Rare",      Color = Color3.fromRGB(60, 215, 125),  WeightMin = 45,   WeightMax = 180,  Chance = 10,  Mult = 2.5 },
+{ Id = "Ruby",      Name = "Ruby",      Rarity = "Epic",      Color = Color3.fromRGB(240, 60, 90),   WeightMin = 150,  WeightMax = 650,  Chance = 8,   Mult = 4 },
+{ Id = "Sapphire",  Name = "Sapphire",  Rarity = "Epic",      Color = Color3.fromRGB(65, 120, 255),  WeightMin = 150,  WeightMax = 650,  Chance = 5,   Mult = 4 },
+{ Id = "Diamond",   Name = "Diamond",   Rarity = "Legendary", Color = Color3.fromRGB(150, 245, 255), WeightMin = 600,  WeightMax = 2200, Chance = 3.5, Mult = 8,  Neon = true },
+{ Id = "Voidstone", Name = "Voidstone", Rarity = "Mythic",    Color = Color3.fromRGB(125, 40, 220),  WeightMin = 2000, WeightMax = 6500, Chance = 1.2, Mult = 16, Neon = true },
+}
+
+Crystals.ById = {}
+for _, def in Crystals.Types do
+Crystals.ById[def.Id] = def
+end
+
+local totalChance = 0
+for _, def in Crystals.Types do
+totalChance += def.Chance
+end
+
+
+function Crystals.rollType(rng)
+rng = rng or Random.new()
+local r = rng:NextNumber() * totalChance
+for _, def in Crystals.Types do
+r -= def.Chance
+if r <= 0 then
+return def
+end
+end
+return Crystals.Types[1]
+end
+
+
+function Crystals.rollWeight(def, rng)
+rng = rng or Random.new()
+local f = rng:NextNumber()
+f = f * f
+return math.floor(def.WeightMin + (def.WeightMax - def.WeightMin) * f + 0.5)
+end
+
+function Crystals.roll(rng)
+local def = Crystals.rollType(rng)
+return def, Crystals.rollWeight(def, rng)
+end
+
+
+function Crystals.height(weight)
+return math.min(16, 1.6 + (math.max(weight, 1) ^ 0.36) * 0.8)
+end
+
+
+function Crystals.income(def, weight)
+return math.max(1, math.floor((math.max(weight, 1) ^ 0.9) * def.Mult * Config.IncomeScale + 0.5))
+end
+
+function Crystals.rarityColor(def)
+return Crystals.RarityColors[def.Rarity]
+end
+
+return Crystals
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX6"><Properties><string name="Name">LowPoly</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+
+
+local LowPoly = {}
+
+local LIGHT_DIR = Vector3.new(-0.45, 0.8, -0.4).Unit
+
+local function shadeColor(color, brightness)
+return Color3.new(
+math.clamp(color.R * brightness, 0, 1),
+math.clamp(color.G * brightness, 0, 1),
+math.clamp(color.B * brightness, 0, 1)
+)
+end
+LowPoly.shadeColor = shadeColor
+
+local function newWedge(opts)
+local w = Instance.new("WedgePart")
+w.Name = opts.Name or "Facet"
+w.Anchored = true
+w.CanCollide = opts.CanCollide == true
+w.CanTouch = false
+w.CanQuery = opts.CanQuery == true
+w.CastShadow = opts.CastShadow ~= false
+w.Massless = true
+w.Material = opts.Material or Enum.Material.SmoothPlastic
+w.Color = opts.Color or Color3.fromRGB(200, 200, 200)
+w.Transparency = opts.Transparency or 0
+w.Reflectance = opts.Reflectance or 0
+w.TopSurface = Enum.SurfaceType.Smooth
+w.BottomSurface = Enum.SurfaceType.Smooth
+return w
+end
+
+
+
+function LowPoly.triangle(parent, a, b, c, opts)
+opts = opts or {}
+local thickness = opts.Thickness or 0.06
+
+local ab, ac, bc = b - a, c - a, c - b
+if ac:Cross(ab).Magnitude < 1e-3 then
+return nil
+end
+
+local abd, acd, bcd = ab:Dot(ab), ac:Dot(ac), bc:Dot(bc)
+if abd > acd and abd > bcd then
+c, a = a, c
+elseif acd > bcd and acd > abd then
+a, b = b, a
+end
+ab, ac, bc = b - a, c - a, c - b
+
+local right = ac:Cross(ab).Unit
+local up = bc:Cross(right).Unit
+local back = bc.Unit
+
+local height = math.max(math.abs(ab:Dot(up)), 0.001)
+
+local w1 = newWedge(opts)
+w1.Size = Vector3.new(thickness, height, math.max(math.abs(ab:Dot(back)), 0.001))
+w1.CFrame = CFrame.fromMatrix((a + b) / 2, right, up, back)
+w1.Parent = parent
+
+local w2 = newWedge(opts)
+w2.Size = Vector3.new(thickness, height, math.max(math.abs(ac:Dot(back)), 0.001))
+w2.CFrame = CFrame.fromMatrix((a + c) / 2, -right, up, -back)
+w2.Parent = parent
+
+return w1, w2
+end
+
+
+
+
+function LowPoly.mesh(parent, verts, faces, opts)
+opts = opts or {}
+local color = opts.Color or Color3.fromRGB(200, 200, 200)
+
+local centroid = Vector3.zero
+for _, v in verts do
+centroid += v
+end
+centroid /= #verts
+
+local rng = Random.new(opts.Seed or 7)
+local parts = {}
+
+for _, f in faces do
+local a, b, c = verts[f[1]], verts[f[2]], verts[f[3]]
+local n = (b - a):Cross(c - a)
+if n.Magnitude > 1e-4 then
+n = n.Unit
+local faceCentre = (a + b + c) / 3
+if n:Dot(faceCentre - centroid) < 0 then
+n = -n
+end
+local lit = n:Dot(LIGHT_DIR) * 0.5 + 0.5
+local brightness = 0.68 + 0.5 * lit + (rng:NextNumber() - 0.5) * 0.08
+local w1, w2 = LowPoly.triangle(parent, a, b, c, {
+Color = shadeColor(color, brightness),
+Material = opts.Material,
+Transparency = opts.Transparency,
+Reflectance = opts.Reflectance,
+Thickness = opts.Thickness,
+CanCollide = opts.CanCollide,
+CanQuery = opts.CanQuery,
+CastShadow = opts.CastShadow,
+})
+if w1 then
+table.insert(parts, w1)
+table.insert(parts, w2)
+end
+end
+end
+return parts
+end
+
+
+function LowPoly.bipyramid(height, radius, sides)
+local verts = { Vector3.new(0, height / 2, 0) }
+for i = 0, sides - 1 do
+local a = (i / sides) * math.pi * 2
+table.insert(verts, Vector3.new(math.cos(a) * radius, height * 0.08, math.sin(a) * radius))
+end
+table.insert(verts, Vector3.new(0, -height / 2, 0))
+local bottom = #verts
+local faces = {}
+for i = 1, sides do
+local j = i % sides + 1
+table.insert(faces, { 1, i + 1, j + 1 })
+table.insert(faces, { bottom, j + 1, i + 1 })
+end
+return verts, faces
+end
+
+
+
+function LowPoly.pyramid(parent, base, radius, height, sides, opts)
+opts = opts or {}
+local yaw = opts.Yaw or 0
+local verts = { base + Vector3.new(0, height, 0) }
+for i = 0, sides - 1 do
+local a = yaw + (i / sides) * math.pi * 2
+table.insert(verts, base + Vector3.new(math.cos(a) * radius, 0, math.sin(a) * radius))
+end
+
+table.insert(verts, base + Vector3.new(0, height * 0.2, 0))
+local faces = {}
+for i = 1, sides do
+local j = i % sides + 1
+table.insert(faces, { 1, i + 1, j + 1 })
+end
+return LowPoly.mesh(parent, verts, faces, opts)
+end
+
+
+function LowPoly.roof(parent, base, halfX, halfZ, height, opts)
+opts = opts or {}
+local apex = base + Vector3.new(0, height, 0)
+local corners = {
+base + Vector3.new(-halfX, 0, -halfZ),
+base + Vector3.new(halfX, 0, -halfZ),
+base + Vector3.new(halfX, 0, halfZ),
+base + Vector3.new(-halfX, 0, halfZ),
+}
+local verts = { apex, corners[1], corners[2], corners[3], corners[4], base + Vector3.new(0, height * 0.2, 0) }
+local faces = { { 1, 2, 3 }, { 1, 3, 4 }, { 1, 4, 5 }, { 1, 5, 2 } }
+return LowPoly.mesh(parent, verts, faces, opts)
+end
+
+
+function LowPoly.rock(parent, center, size, opts)
+opts = opts or {}
+local rng = Random.new(opts.Seed or 3)
+local verts, faces = LowPoly.bipyramid(size.Y, size.X * 0.5, 5)
+local out = {}
+for i, v in verts do
+local j = Vector3.new((rng:NextNumber() - 0.5) * 0.25 * size.X, (rng:NextNumber() - 0.5) * 0.12 * size.Y, (rng:NextNumber() - 0.5) * 0.25 * size.Z)
+out[i] = center + CFrame.Angles(0, opts.Yaw or 0, 0):VectorToWorldSpace(v + j)
+end
+return LowPoly.mesh(parent, out, faces, opts)
+end
+
+
+
+function LowPoly.crystal(def, weight, height, seed)
+local rng = Random.new(seed or math.random(1, 1e6))
+local model = Instance.new("Model")
+model.Name = "Crystal"
+
+local sides = if weight < 60 then 4 elseif weight < 600 then 5 else 6
+local R = height * 0.25
+local topY, botY = height / 2, -height / 2
+local ringTopY = topY - height * 0.27
+
+local verts = {}
+
+table.insert(verts, Vector3.new((rng:NextNumber() - 0.5) * R * 0.25, topY, (rng:NextNumber() - 0.5) * R * 0.25))
+local twist = rng:NextNumber() * math.pi
+for i = 0, sides - 1 do
+local a = twist + (i / sides) * math.pi * 2
+local r = R * (0.86 + rng:NextNumber() * 0.28)
+table.insert(verts, Vector3.new(math.cos(a) * r, ringTopY + (rng:NextNumber() - 0.5) * R * 0.25, math.sin(a) * r))
+end
+for i = 0, sides - 1 do
+local a = twist + (i / sides) * math.pi * 2
+local r = R * (0.78 + rng:NextNumber() * 0.26)
+table.insert(verts, Vector3.new(math.cos(a) * r, botY, math.sin(a) * r))
+end
+
+local faces = {}
+for i = 1, sides do
+local j = i % sides + 1
+local t1, t2 = i + 1, j + 1
+local b1, b2 = sides + 1 + i, sides + 1 + j
+table.insert(faces, { 1, t1, t2 })
+table.insert(faces, { t1, b1, b2 })
+table.insert(faces, { t1, b2, t2 })
+end
+for i = 2, sides - 1 do
+table.insert(faces, { sides + 2, sides + 1 + i, sides + 2 + i })
+end
+
+local meshOpts = {
+Color = def.Color,
+Material = if def.Neon then Enum.Material.Neon else Enum.Material.SmoothPlastic,
+Transparency = if def.Neon then 0 else 0.06,
+Reflectance = if def.Neon then 0 else 0.12,
+Seed = rng:NextInteger(1, 99999),
+}
+LowPoly.mesh(model, verts, faces, meshOpts)
+
+
+if weight >= 100 then
+for s = 1, 2 do
+local ang = if s == 1 then 0.9 + rng:NextNumber() * 0.5 else 3.9 + rng:NextNumber() * 0.6
+local tilt = math.rad(22 + rng:NextNumber() * 12)
+local hs = height * (0.4 + rng:NextNumber() * 0.12)
+local rs = R * 0.55
+local sv, sf = LowPoly.bipyramid(hs, rs, 4)
+local cf = CFrame.new(math.cos(ang) * R * 0.75, botY + (hs / 2) * math.cos(tilt), math.sin(ang) * R * 0.75)
+* CFrame.Angles(0, -ang, 0)
+* CFrame.Angles(0, 0, -tilt)
+local world = {}
+for i, v in sv do
+world[i] = cf:PointToWorldSpace(v)
+end
+meshOpts.Seed = rng:NextInteger(1, 99999)
+LowPoly.mesh(model, world, sf, meshOpts)
+end
+end
+
+local core = Instance.new("Part")
+core.Name = "Core"
+core.Size = Vector3.new(R * 2.4, height, R * 2.4)
+core.CFrame = CFrame.new(0, 0, 0)
+core.Transparency = 1
+core.Anchored = true
+core.CanCollide = false
+core.CanTouch = false
+core.CanQuery = false
+core.CastShadow = false
+core.Massless = true
+core.Parent = model
+model.PrimaryPart = core
+
+return model
+end
+
+return LowPoly
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX7"><Properties><string name="Name">Remotes</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local FOLDER_NAME = "Remotes"
+
+local EVENTS = {
+"Notify",
+"Announce",
+"OpenShop",
+"WorkoutStart",
+"WorkoutEnd",
+"WorkoutResult",
+"WorkoutRep",
+"WorkoutStop",
+"ToggleLock",
+"DropCrystal",
+}
+
+local FUNCTIONS = {
+"ShopAction",
+"Admin",
+}
+
+local Remotes = {}
+
+if RunService:IsServer() then
+local folder = ReplicatedStorage:FindFirstChild(FOLDER_NAME)
+if not folder then
+folder = Instance.new("Folder")
+folder.Name = FOLDER_NAME
+folder.Parent = ReplicatedStorage
+end
+for _, name in EVENTS do
+if not folder:FindFirstChild(name) then
+local e = Instance.new("RemoteEvent")
+e.Name = name
+e.Parent = folder
+end
+end
+for _, name in FUNCTIONS do
+if not folder:FindFirstChild(name) then
+local f = Instance.new("RemoteFunction")
+f.Name = name
+f.Parent = folder
+end
+end
+end
+
+local folder = ReplicatedStorage:WaitForChild(FOLDER_NAME)
+for _, name in EVENTS do
+Remotes[name] = folder:WaitForChild(name)
+end
+for _, name in FUNCTIONS do
+Remotes[name] = folder:WaitForChild(name)
+end
+
+return Remotes
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">Trails</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local Trails = {}
+
+local function C(r, g, b)
+return Color3.fromRGB(r, g, b)
+end
+
+Trails.List = {
+{ Id = "Dust",     Name = "Dust",       Price = 0,       Colors = { { 0, C(210, 210, 215) }, { 1, C(120, 120, 130) } },                                         Lifetime = 0.6, Glow = 0 },
+{ Id = "Ember",    Name = "Ember",      Price = 300,     Colors = { { 0, C(255, 190, 70) }, { 1, C(255, 70, 40) } },                                            Lifetime = 0.7, Glow = 0.6 },
+{ Id = "Frost",    Name = "Frost",      Price = 800,     Colors = { { 0, C(255, 255, 255) }, { 1, C(120, 210, 255) } },                                        Lifetime = 0.8, Glow = 0.4 },
+{ Id = "Toxic",    Name = "Toxic",      Price = 1800,    Colors = { { 0, C(190, 255, 90) }, { 1, C(40, 150, 60) } },                                           Lifetime = 0.8, Glow = 0.7 },
+{ Id = "Sunset",   Name = "Sunset",     Price = 4000,    Colors = { { 0, C(255, 200, 80) }, { 0.5, C(255, 100, 140) }, { 1, C(130, 80, 220) } },               Lifetime = 0.9, Glow = 0.6 },
+{ Id = "Ocean",    Name = "Ocean",      Price = 9000,    Colors = { { 0, C(120, 255, 240) }, { 1, C(30, 80, 220) } },                                          Lifetime = 0.9, Glow = 0.5 },
+{ Id = "Rose",     Name = "Rose Petal", Price = 20000,   Colors = { { 0, C(255, 190, 215) }, { 1, C(220, 40, 100) } },                                         Lifetime = 1.0, Glow = 0.4 },
+{ Id = "Gold",     Name = "Gold Rush",  Price = 45000,   Colors = { { 0, C(255, 245, 160) }, { 0.5, C(255, 200, 40) }, { 1, C(200, 120, 20) } },              Lifetime = 1.0, Glow = 1 },
+{ Id = "Amethyst", Name = "Amethyst",   Price = 100000,  Colors = { { 0, C(235, 170, 255) }, { 1, C(120, 40, 200) } },                                         Lifetime = 1.1, Glow = 0.8 },
+{ Id = "Void",     Name = "Void",       Price = 250000,  Colors = { { 0, C(170, 90, 255) }, { 0.5, C(60, 20, 120) }, { 1, C(10, 0, 25) } },                   Lifetime = 1.2, Glow = 0.5 },
+{ Id = "Plasma",   Name = "Plasma",     Price = 600000,  Colors = { { 0, C(80, 255, 255) }, { 0.5, C(255, 80, 255) }, { 1, C(80, 120, 255) } },               Lifetime = 1.2, Glow = 1 },
+{ Id = "Rainbow",  Name = "Rainbow",    Price = 1500000, Colors = { { 0, C(255, 80, 80) }, { 0.2, C(255, 200, 60) }, { 0.4, C(100, 255, 120) }, { 0.6, C(70, 220, 255) }, { 0.8, C(120, 100, 255) }, { 1, C(255, 90, 220) } }, Lifetime = 1.4, Glow = 1 },
+}
+
+Trails.ById = {}
+for _, t in Trails.List do
+Trails.ById[t.Id] = t
+end
+
+function Trails.sequence(def)
+local points = {}
+for _, kp in def.Colors do
+table.insert(points, ColorSequenceKeypoint.new(kp[1], kp[2]))
+end
+return ColorSequence.new(points)
+end
+
+return Trails
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">UI</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+
+local UI = {}
+
+UI.Theme = {
+Bg = Color3.fromRGB(28, 31, 56),
+Bg2 = Color3.fromRGB(42, 47, 84),
+Bg3 = Color3.fromRGB(58, 64, 108),
+Border = Color3.fromRGB(110, 220, 255),
+Accent = Color3.fromRGB(255, 110, 190),
+Gold = Color3.fromRGB(255, 205, 90),
+Green = Color3.fromRGB(90, 230, 150),
+Red = Color3.fromRGB(255, 95, 115),
+Text = Color3.fromRGB(240, 244, 255),
+Muted = Color3.fromRGB(160, 170, 205),
+Disabled = Color3.fromRGB(70, 74, 98),
+}
+UI.Font = Enum.Font.GothamBold
+UI.FontBlack = Enum.Font.GothamBlack
+
+local SQ2 = math.sqrt(2)
+local Theme = UI.Theme
+
+function UI.tween(obj, seconds, props, style, direction)
+local t = TweenService:Create(obj, TweenInfo.new(seconds, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out), props)
+t:Play()
+return t
+end
+
+function UI.screenGui(name, order)
+local gui = Instance.new("ScreenGui")
+gui.Name = name
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = order or 1
+gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+return gui
+end
+
+
+function UI.autoScale(gui)
+local scale = Instance.new("UIScale")
+scale.Parent = gui
+local function update()
+local camera = workspace.CurrentCamera
+if camera then
+scale.Scale = math.clamp(camera.ViewportSize.Y / 780, 0.65, 1.3)
+end
+end
+update()
+local camera = workspace.CurrentCamera
+if camera then
+camera:GetPropertyChangedSignal("ViewportSize"):Connect(update)
+end
+return scale
+end
+
+
+function UI.chamfer(parent, color, c, z, name)
+local holder = Instance.new("Frame")
+holder.Name = name or "Chamfer"
+holder.BackgroundTransparency = 1
+holder.BorderSizePixel = 0
+holder.Size = UDim2.fromScale(1, 1)
+holder.ZIndex = z
+holder.Parent = parent
+local pieces = {}
+local function piece(size, pos, rotation, anchor)
+local f = Instance.new("Frame")
+f.BorderSizePixel = 0
+f.BackgroundColor3 = color
+f.Size = size
+f.Position = pos
+f.ZIndex = z
+f.Rotation = rotation or 0
+if anchor then
+f.AnchorPoint = anchor
+end
+f.Parent = holder
+table.insert(pieces, f)
+end
+piece(UDim2.new(1, 0, 1, -2 * c), UDim2.new(0, 0, 0, c))
+piece(UDim2.new(1, -2 * c, 1, 0), UDim2.new(0, c, 0, 0))
+local d = math.ceil(c * SQ2)
+local mid = Vector2.new(0.5, 0.5)
+piece(UDim2.fromOffset(d, d), UDim2.new(0, c, 0, c), 45, mid)
+piece(UDim2.fromOffset(d, d), UDim2.new(1, -c, 0, c), 45, mid)
+piece(UDim2.fromOffset(d, d), UDim2.new(0, c, 1, -c), 45, mid)
+piece(UDim2.fromOffset(d, d), UDim2.new(1, -c, 1, -c), 45, mid)
+return holder, pieces
+end
+
+
+
+function UI.panel(parent, props)
+props = props or {}
+local z = props.Z or 1
+local cham = props.Cham or 8
+local stroke = props.Stroke or 3
+
+local root = Instance.new("Frame")
+root.Name = props.Name or "Panel"
+root.BackgroundTransparency = 1
+root.BorderSizePixel = 0
+root.Size = props.Size or UDim2.fromOffset(200, 100)
+root.Position = props.Position or UDim2.new()
+root.AnchorPoint = props.AnchorPoint or Vector2.zero
+root.ZIndex = z
+if props.LayoutOrder then
+root.LayoutOrder = props.LayoutOrder
+end
+root.Parent = parent
+
+local _, edge = UI.chamfer(root, props.Border or Theme.Border, cham, z, "Edge")
+
+local wrap = Instance.new("Frame")
+wrap.Name = "FillWrap"
+wrap.BackgroundTransparency = 1
+wrap.BorderSizePixel = 0
+wrap.Size = UDim2.new(1, -2 * stroke, 1, -2 * stroke)
+wrap.Position = UDim2.fromOffset(stroke, stroke)
+wrap.ZIndex = z + 1
+wrap.Parent = root
+local _, fill = UI.chamfer(wrap, props.Color or Theme.Bg, math.max(cham - 1, 2), z + 1, "Fill")
+
+if props.Shine ~= false then
+local clip = Instance.new("Frame")
+clip.Name = "Shine"
+clip.BackgroundTransparency = 1
+clip.BorderSizePixel = 0
+clip.ClipsDescendants = true
+clip.Size = UDim2.fromScale(1, 1)
+clip.ZIndex = z + 2
+clip.Parent = wrap
+local function band(x, width, transparency)
+local b = Instance.new("Frame")
+b.BorderSizePixel = 0
+b.AnchorPoint = Vector2.new(0.5, 0.5)
+b.Position = UDim2.fromScale(x, 0.5)
+b.Size = UDim2.new(0, width, 2, 0)
+b.Rotation = 18
+b.BackgroundColor3 = Color3.new(1, 1, 1)
+b.BackgroundTransparency = transparency
+b.ZIndex = z + 2
+b.Parent = clip
+end
+band(0.32, 26, 0.94)
+band(0.42, 9, 0.9)
+end
+
+local content = Instance.new("Frame")
+content.Name = "Content"
+content.BackgroundTransparency = 1
+content.BorderSizePixel = 0
+content.Size = UDim2.fromScale(1, 1)
+content.ZIndex = z + 3
+content.Parent = root
+
+local self = { Root = root, Content = content }
+function self.SetColor(c)
+for _, f in fill do
+f.BackgroundColor3 = c
+end
+end
+function self.SetBorder(c)
+for _, f in edge do
+f.BackgroundColor3 = c
+end
+end
+return self
+end
+
+
+function UI.text(parent, props)
+local l = Instance.new("TextLabel")
+l.Name = props.Name or "Text"
+l.BackgroundTransparency = 1
+l.BorderSizePixel = 0
+l.Size = props.Size or UDim2.fromScale(1, 1)
+l.Position = props.Position or UDim2.new()
+l.AnchorPoint = props.AnchorPoint or Vector2.zero
+l.Text = props.Text or ""
+l.TextSize = props.TextSize or 16
+l.TextColor3 = props.TextColor or Theme.Text
+l.Font = props.Font or UI.Font
+l.TextXAlignment = props.XAlign or Enum.TextXAlignment.Center
+l.TextYAlignment = props.YAlign or Enum.TextYAlignment.Center
+l.TextWrapped = props.Wrapped == true
+l.ZIndex = props.Z or 1
+l.Parent = parent
+return l
+end
+
+
+
+function UI.button(parent, props)
+local z = props.Z or 1
+local base = props.Color or Theme.Bg2
+local hover = props.Hover or base:Lerp(Color3.new(1, 1, 1), 0.18)
+local panel = UI.panel(parent, {
+Name = props.Name or "Button",
+Size = props.Size,
+Position = props.Position,
+AnchorPoint = props.AnchorPoint,
+Color = base,
+Border = props.Border or Theme.Border,
+Cham = props.Cham or 7,
+Stroke = props.Stroke or 2,
+Z = z,
+LayoutOrder = props.LayoutOrder,
+})
+local button = Instance.new("TextButton")
+button.Name = "Hit"
+button.BackgroundTransparency = 1
+button.BorderSizePixel = 0
+button.AutoButtonColor = false
+button.Size = UDim2.fromScale(1, 1)
+button.Text = props.Text or ""
+button.TextSize = props.TextSize or 16
+button.TextColor3 = props.TextColor or Theme.Text
+button.Font = props.Font or UI.Font
+button.ZIndex = z + 5
+button.Parent = panel.Root
+
+local self = { Root = panel.Root, Button = button, Panel = panel, Enabled = true }
+local colors = { base = base, hover = hover }
+
+button.MouseEnter:Connect(function()
+if self.Enabled then
+panel.SetColor(colors.hover)
+end
+end)
+button.MouseLeave:Connect(function()
+panel.SetColor(if self.Enabled then colors.base else Theme.Disabled)
+end)
+button.MouseButton1Down:Connect(function()
+if self.Enabled then
+panel.SetColor(colors.base:Lerp(Color3.new(0, 0, 0), 0.2))
+end
+end)
+button.MouseButton1Up:Connect(function()
+if self.Enabled then
+panel.SetColor(colors.hover)
+end
+end)
+button.Activated:Connect(function()
+if self.Enabled and props.OnClick then
+props.OnClick()
+end
+end)
+
+function self.SetText(t)
+button.Text = t
+end
+function self.SetColors(newBase, newHover, border)
+colors.base = newBase
+colors.hover = newHover or newBase:Lerp(Color3.new(1, 1, 1), 0.18)
+if self.Enabled then
+panel.SetColor(colors.base)
+end
+if border then
+panel.SetBorder(border)
+end
+end
+function self.SetEnabled(enabled)
+self.Enabled = enabled
+panel.SetColor(if enabled then colors.base else Theme.Disabled)
+button.TextTransparency = if enabled then 0 else 0.35
+end
+return self
+end
+
+
+function UI.gemIcon(parent, size, position, color)
+local holder = Instance.new("Frame")
+holder.BackgroundTransparency = 1
+holder.Size = UDim2.fromOffset(size, size)
+holder.Position = position or UDim2.new()
+holder.ZIndex = 8
+holder.Parent = parent
+color = color or Theme.Border
+local function diamond(s, x, y, c, transparency)
+local d = Instance.new("Frame")
+d.BorderSizePixel = 0
+d.AnchorPoint = Vector2.new(0.5, 0.5)
+d.Position = UDim2.fromScale(x, y)
+d.Size = UDim2.fromOffset(s, s)
+d.Rotation = 45
+d.BackgroundColor3 = c
+d.BackgroundTransparency = transparency or 0
+d.ZIndex = 8
+d.Parent = holder
+end
+diamond(size * 0.7, 0.5, 0.5, color:Lerp(Color3.new(0, 0, 0), 0.25))
+diamond(size * 0.42, 0.42, 0.42, color:Lerp(Color3.new(1, 1, 1), 0.55), 0.1)
+return holder
+end
+
+
+function UI.dumbbellIcon(parent, size, position, color)
+local holder = Instance.new("Frame")
+holder.BackgroundTransparency = 1
+holder.Size = UDim2.fromOffset(size, size)
+holder.Position = position or UDim2.new()
+holder.ZIndex = 8
+holder.Parent = parent
+color = color or Theme.Accent
+local function block(w, h, x, c)
+local f = Instance.new("Frame")
+f.BorderSizePixel = 0
+f.AnchorPoint = Vector2.new(0.5, 0.5)
+f.Position = UDim2.fromScale(x, 0.5)
+f.Size = UDim2.fromOffset(w, h)
+f.BackgroundColor3 = c
+f.ZIndex = 8
+f.Parent = holder
+end
+block(size * 0.62, size * 0.12, 0.5, Theme.Text)
+block(size * 0.16, size * 0.62, 0.17, color)
+block(size * 0.16, size * 0.62, 0.83, color)
+block(size * 0.12, size * 0.4, 0.03, color:Lerp(Color3.new(0, 0, 0), 0.3))
+block(size * 0.12, size * 0.4, 0.97, color:Lerp(Color3.new(0, 0, 0), 0.3))
+return holder
+end
+
+return UI
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">Util</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+local Util = {}
+
+
+function Util.comma(n)
+n = math.floor((n or 0) + 0.5)
+local negative = n < 0
+local s = tostring(math.abs(n))
+local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+if out:sub(1, 1) == "," then
+out = out:sub(2)
+end
+return (negative and "-" or "") .. out
+end
+
+
+function Util.abbrev(n)
+n = n or 0
+local a = math.abs(n)
+if a < 100000 then
+return Util.comma(n)
+end
+local suffixes = { "K", "M", "B", "T", "Qa" }
+local idx = 0
+while a >= 1000 and idx < #suffixes do
+a = a / 1000
+idx += 1
+end
+local text = string.format("%.2f", a):gsub("%.?0+$", "")
+return (n < 0 and "-" or "") .. text .. suffixes[idx]
+end
+
+function Util.formatWeight(w)
+return Util.comma(w) .. " kg"
+end
+
+
+function Util.split(str, sep)
+local out = {}
+if str == nil or str == "" then
+return out
+end
+for piece in string.gmatch(str, "([^" .. (sep or ",") .. "]+)") do
+table.insert(out, piece)
+end
+return out
+end
+
+function Util.setFromList(list)
+local set = {}
+for _, v in list do
+set[v] = true
+end
+return set
+end
+
+return Util
+]]></ProtectedString></Properties></Item></Item></Item>
+<Item class="ServerScriptService" referent="RBX23"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Script" referent="RBX13"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+
+
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local ServerStorage = game:GetService("ServerStorage")
+local StarterPlayer = game:GetService("StarterPlayer")
+
+local STARTUP_TIMEOUT = 25
+
+local started = false
+local messageText = nil
+
+
+
+
+local function showMessage(player, text)
+task.spawn(function()
+local playerGui = player:FindFirstChildOfClass("PlayerGui") or player:WaitForChild("PlayerGui", 15)
+if not playerGui then
+return
+end
+local gui = playerGui:FindFirstChild("StealACrystalError")
+if not gui then
+gui = Instance.new("ScreenGui")
+gui.Name = "StealACrystalError"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 1000
+
+local box = Instance.new("TextButton")
+box.Name = "Box"
+box.Text = ""
+box.AutoButtonColor = false
+box.AnchorPoint = Vector2.new(0.5, 0)
+box.Position = UDim2.new(0.5, 0, 0, 24)
+box.Size = UDim2.new(0.9, 0, 0, 0)
+box.AutomaticSize = Enum.AutomaticSize.Y
+box.BackgroundColor3 = Color3.fromRGB(44, 12, 22)
+box.BorderSizePixel = 0
+box.Parent = gui
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 95, 115)
+stroke.Thickness = 3
+stroke.Parent = box
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0, 14)
+pad.PaddingBottom = UDim.new(0, 14)
+pad.PaddingLeft = UDim.new(0, 16)
+pad.PaddingRight = UDim.new(0, 16)
+pad.Parent = box
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 8)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = box
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.LayoutOrder = 1
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, 0, 0, 26)
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 22
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextColor3 = Color3.fromRGB(255, 120, 140)
+title.Text = "STEAL A CRYSTAL - SETUP PROBLEM"
+title.Parent = box
+
+local body = Instance.new("TextLabel")
+body.Name = "Body"
+body.LayoutOrder = 2
+body.BackgroundTransparency = 1
+body.Size = UDim2.new(1, 0, 0, 0)
+body.AutomaticSize = Enum.AutomaticSize.Y
+body.Font = Enum.Font.GothamMedium
+body.TextSize = 17
+body.TextWrapped = true
+body.TextXAlignment = Enum.TextXAlignment.Left
+body.TextYAlignment = Enum.TextYAlignment.Top
+body.TextColor3 = Color3.fromRGB(245, 245, 255)
+body.Text = ""
+body.Parent = box
+
+local hint = Instance.new("TextLabel")
+hint.Name = "Hint"
+hint.LayoutOrder = 3
+hint.BackgroundTransparency = 1
+hint.Size = UDim2.new(1, 0, 0, 18)
+hint.Font = Enum.Font.Gotham
+hint.TextSize = 14
+hint.TextXAlignment = Enum.TextXAlignment.Left
+hint.TextColor3 = Color3.fromRGB(190, 195, 220)
+hint.Text = "Tap this box to close it. Full details are in Studio: View > Output."
+hint.Parent = box
+
+box.Activated:Connect(function()
+gui:Destroy()
+end)
+gui.Parent = playerGui
+end
+gui.Box.Body.Text = text
+end)
+end
+
+local function broadcast(text)
+messageText = if messageText then (messageText .. "\n\n" .. text) else text
+for _, player in Players:GetPlayers() do
+showMessage(player, messageText)
+end
+end
+
+
+local function fail(text)
+warn("[Steal a Crystal] " .. text)
+Players.CharacterAutoLoads = true
+broadcast(text)
+for _, player in Players:GetPlayers() do
+if not player.Character then
+pcall(function()
+player:LoadCharacter()
+end)
+end
+end
+end
+
+
+Players.PlayerAdded:Connect(function(player)
+if messageText then
+showMessage(player, messageText)
+end
+end)
+
+
+
+
+local function structureProblems()
+local list = {}
+local function check(container, folderName, names)
+local folder = container:FindFirstChild(folderName)
+if not folder then
+table.insert(list, container:GetFullName() .. "." .. folderName .. " (folder) is missing")
+return
+end
+for _, n in names do
+local m = folder:FindFirstChild(n)
+if not m then
+table.insert(list, folder:GetFullName() .. "." .. n .. " is missing")
+elseif not m:IsA("ModuleScript") then
+table.insert(list, folder:GetFullName() .. "." .. n .. " must be a ModuleScript but it is a " .. m.ClassName)
+end
+end
+end
+check(ReplicatedStorage, "Shared", { "Config", "Crystals", "LowPoly", "Remotes", "Trails", "UI", "Util" })
+check(ServerScriptService, "Server", { "AdminSvc", "CrystalSvc", "Data", "Gym", "MapBuilder", "Plots", "State", "TrailSvc" })
+local scripts = StarterPlayer:FindFirstChild("StarterPlayerScripts")
+if not scripts then
+table.insert(list, "StarterPlayer.StarterPlayerScripts is missing")
+else
+check(scripts, "Client", { "HUD", "Prompts", "Shop", "Toast", "Workout" })
+local main = scripts:FindFirstChild("Main")
+if not main or not main:IsA("LocalScript") then
+table.insert(list, "StarterPlayer.StarterPlayerScripts.Main must be a LocalScript")
+end
+end
+return list
+end
+
+local function shortError(err)
+return string.sub(tostring(err), 1, 700)
+end
+
+
+
+
+local function start()
+local problems = structureProblems()
+if #problems > 0 then
+fail("Some game files are missing or the wrong type:\n- " .. table.concat(problems, "\n- ")
+.. "\n\nFix: open StealACrystal.rbxlx with File > Open from File in Roblox Studio. Do not copy the scripts in by hand.")
+return
+end
+
+local Shared = ReplicatedStorage.Shared
+local Server = ServerScriptService.Server
+
+local Config = require(Shared.Config)
+local Remotes = require(Shared.Remotes)
+
+local ctx = { Remotes = Remotes }
+
+function ctx.notify(player, text, kind)
+if player and player.Parent then
+Remotes.Notify:FireClient(player, text, kind or "info")
+end
+end
+
+ctx.Data = require(Server.Data)
+ctx.State = require(Server.State)
+ctx.Plots = require(Server.Plots)
+ctx.CrystalSvc = require(Server.CrystalSvc)
+ctx.Gym = require(Server.Gym)
+ctx.TrailSvc = require(Server.TrailSvc)
+ctx.Admin = require(Server.AdminSvc)
+local MapBuilder = require(Server.MapBuilder)
+
+local map = MapBuilder.build()
+ctx.Map = map
+
+
+local initErrors = {}
+local function step(name, fn)
+local ok, err = xpcall(fn, debug.traceback)
+if not ok then
+warn("[Steal a Crystal] " .. name .. " failed to start:\n" .. tostring(err))
+table.insert(initErrors, name .. ": " .. shortError(err))
+end
+end
+step("Data", function() ctx.Data.init(ctx) end)
+step("Plots", function() ctx.Plots.init(ctx, map) end)
+step("Crystals", function() ctx.CrystalSvc.init(ctx, map) end)
+step("Gym", function() ctx.Gym.init(ctx, map) end)
+step("Trail shop", function() ctx.TrailSvc.init(ctx) end)
+step("Admin", function() ctx.Admin.init(ctx) end)
+
+map.ShopPrompt.Triggered:Connect(function(player)
+Remotes.OpenShop:FireClient(player)
+end)
+
+if #initErrors > 0 then
+broadcast("Some systems did not start:\n- " .. table.concat(initErrors, "\n- "))
+end
+if not ServerStorage:FindFirstChild("AdminPanel") then
+warn("[Steal a Crystal] ServerStorage.AdminPanel is missing, so the admin panel is unavailable.")
+end
+
+
+
+
+local function setupCharacter(player, character)
+local humanoid = character:WaitForChild("Humanoid", 10)
+if not humanoid then
+return
+end
+ctx.Plots.watchCharacter(player, character)
+ctx.State.refreshSpeed(player)
+ctx.TrailSvc.apply(player)
+ctx.Admin.applyGod(player)
+
+humanoid.Died:Connect(function()
+ctx.CrystalSvc.release(player)
+ctx.Gym.stop(player, "died")
+task.wait(Players.RespawnTime)
+if player.Parent then
+pcall(function()
+player:LoadCharacter()
+end)
+end
+end)
+end
+
+
+
+
+local function setupPlayer(player)
+local plot = ctx.Plots.assign(player)
+if not plot then
+if Config.KickWhenFull then
+player:Kick("This server only has " .. Config.PlotCount .. " bases and they're all taken. Please join another server!")
+return
+end
+player.RespawnLocation = map.FallbackSpawn
+end
+
+local profile = ctx.Data.load(player)
+if not player.Parent then
+ctx.Plots.release(player)
+ctx.Data.unload(player)
+return
+end
+
+if plot then
+ctx.Plots.loadCrystals(player, profile.Crystals)
+end
+
+player.CharacterAdded:Connect(function(character)
+setupCharacter(player, character)
+end)
+
+task.spawn(function()
+ctx.Admin.grantPanel(player)
+end)
+
+ctx.notify(player, "Welcome to Steal a Crystal! Grab crystals from the field, train in your gym, and guard your base.", "info")
+player:LoadCharacter()
+end
+
+local function onPlayerAdded(player)
+local ok, err = xpcall(setupPlayer, debug.traceback, player)
+if not ok then
+warn("[Steal a Crystal] could not set up " .. player.Name .. ":\n" .. tostring(err))
+showMessage(player, "Could not set you up:\n" .. shortError(err))
+if player.Parent and not player.Character then
+pcall(function()
+player:LoadCharacter()
+end)
+end
+end
+end
+
+local function onPlayerRemoving(player)
+ctx.Gym.stop(player, "left")
+ctx.CrystalSvc.release(player)
+if ctx.Data.get(player) then
+ctx.Data.save(player)
+end
+ctx.Plots.release(player)
+ctx.Data.unload(player)
+ctx.State.remove(player)
+ctx.Admin.forget(player)
+end
+
+
+
+Players.CharacterAutoLoads = false
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(function(player)
+pcall(onPlayerRemoving, player)
+end)
+for _, player in Players:GetPlayers() do
+task.spawn(onPlayerAdded, player)
+end
+
+
+task.spawn(function()
+while true do
+task.wait(1)
+for _, player in Players:GetPlayers() do
+local character = player.Character
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+if hrp and humanoid and humanoid.Health > 0 and hrp.Position.Y < -40 then
+humanoid.Health = 0
+end
+end
+end
+end)
+
+started = true
+print("[Steal a Crystal] server ready - " .. Config.PlotCount .. " plots built")
+end
+
+
+task.delay(STARTUP_TIMEOUT, function()
+if not started and not messageText then
+fail("Start-up is taking longer than " .. STARTUP_TIMEOUT .. " seconds, so something is stuck.\n"
+.. "Open Studio's Output window (View > Output) and look for an 'Infinite yield possible' warning or a red error.")
+end
+end)
+
+local ok, err = xpcall(start, debug.traceback)
+if not ok then
+fail("Start-up error:\n" .. shortError(err))
+end
+]]></ProtectedString></Properties></Item><Item class="Folder" referent="RBX22"><Properties><string name="Name">Server</string></Properties><Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">AdminSvc</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+
+
+
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+local Trails = require(Shared:WaitForChild("Trails"))
+
+local Admin = {}
+
+local ctx = nil
+local cache = {}
+
+
+
+
+local function compute(player)
+if table.find(Config.AdminUserIds, player.UserId) then
+return true
+end
+if RunService:IsStudio() then
+return true
+end
+if game.CreatorType == Enum.CreatorType.Group then
+local ok, rank = pcall(function()
+return player:GetRankInGroup(game.CreatorId)
+end)
+return ok and rank >= 255
+end
+return game.CreatorId ~= 0 and player.UserId == game.CreatorId
+end
+
+function Admin.isAdmin(player)
+local v = cache[player]
+if v == nil then
+v = compute(player) == true
+cache[player] = v
+end
+return v
+end
+
+function Admin.forget(player)
+cache[player] = nil
+end
+
+function Admin.grantPanel(player)
+if not Admin.isAdmin(player) then
+return
+end
+local template = ServerStorage:FindFirstChild("AdminPanel")
+local playerGui = player:WaitForChild("PlayerGui", 15)
+if template and playerGui and not playerGui:FindFirstChild("AdminPanel") then
+template:Clone().Parent = playerGui
+end
+end
+
+function Admin.applyGod(player)
+local st = ctx.State.get(player)
+local character = player.Character
+if not character then
+return
+end
+local existing = character:FindFirstChild("AdminGodField")
+if st.God and not existing then
+local ff = Instance.new("ForceField")
+ff.Name = "AdminGodField"
+ff.Visible = false
+ff.Parent = character
+elseif not st.God and existing then
+existing:Destroy()
+end
+end
+
+
+
+
+local function ok(msg, extra)
+local r = { ok = true, msg = msg }
+if extra then
+for k, v in extra do
+r[k] = v
+end
+end
+return r
+end
+
+local function fail(msg)
+return { ok = false, msg = msg }
+end
+
+local function targetOf(admin, args)
+local id = tonumber(args.Target)
+if id then
+return Players:GetPlayerByUserId(id)
+end
+return admin
+end
+
+local function clampNumber(v, lo, hi)
+v = tonumber(v)
+if not v or v ~= v then
+return nil
+end
+return math.clamp(v, lo, hi)
+end
+
+local function rootOf(player)
+local character = player and player.Character
+return character and character:FindFirstChild("HumanoidRootPart")
+end
+
+local actions = {}
+
+actions.ListPlayers = function(admin)
+local list = {}
+for _, p in Players:GetPlayers() do
+local profile = ctx.Data.get(p)
+table.insert(list, {
+UserId = p.UserId,
+Name = p.Name,
+DisplayName = p.DisplayName,
+Gems = profile and profile.Gems or 0,
+Strength = profile and profile.Strength or 0,
+Plot = p:GetAttribute("PlotIndex") or 0,
+})
+end
+return ok("OK", { players = list })
+end
+
+actions.GiveGems = function(admin, args)
+local target = targetOf(admin, args)
+local amount = clampNumber(args.Amount, -1e12, 1e12)
+if not target or not amount then
+return fail("Pick a player and enter an amount")
+end
+amount = math.floor(amount)
+ctx.Data.addGems(target, amount)
+return ok(string.format("Gave %s gems to %s", tostring(amount), target.Name))
+end
+
+actions.SetGems = function(admin, args)
+local target = targetOf(admin, args)
+local amount = clampNumber(args.Amount, 0, 1e12)
+if not target or not amount then
+return fail("Pick a player and enter an amount")
+end
+amount = math.floor(amount)
+ctx.Data.setGems(target, amount)
+return ok(string.format("%s now has %s gems", target.Name, tostring(amount)))
+end
+
+actions.AddStrength = function(admin, args)
+local target = targetOf(admin, args)
+local amount = clampNumber(args.Amount, -1e9, 1e9)
+if not target or not amount then
+return fail("Pick a player and enter an amount")
+end
+ctx.Data.addStrength(target, math.floor(amount))
+return ok(string.format("%s strength is now %s", target.Name, tostring(ctx.Data.get(target).Strength)))
+end
+
+actions.SetStrength = function(admin, args)
+local target = targetOf(admin, args)
+local amount = clampNumber(args.Amount, 1, 1e9)
+if not target or not amount then
+return fail("Pick a player and enter an amount")
+end
+amount = math.floor(amount)
+ctx.Data.setStrength(target, amount)
+return ok(string.format("%s strength set to %s", target.Name, tostring(amount)))
+end
+
+actions.GiveAllTrails = function(admin, args)
+local target = targetOf(admin, args)
+if not target then
+return fail("Pick a player")
+end
+for _, t in Trails.List do
+ctx.Data.giveTrail(target, t.Id)
+end
+return ok("Unlocked every trail for " .. target.Name)
+end
+
+actions.ResetData = function(admin, args)
+local target = targetOf(admin, args)
+if not target then
+return fail("Pick a player")
+end
+ctx.CrystalSvc.release(target)
+ctx.Gym.stop(target, "reset")
+local plot = ctx.Plots.ofPlayer(target)
+if plot then
+for _, ped in plot.Pedestals do
+if ped.Crystal then
+local model = ped.Crystal
+ctx.Plots.clearPedestal(ped)
+model:Destroy()
+end
+end
+end
+ctx.Data.reset(target)
+ctx.TrailSvc.apply(target)
+return ok("Reset " .. target.Name .. "'s progress")
+end
+
+actions.Kick = function(admin, args)
+local target = targetOf(admin, args)
+if not target then
+return fail("Pick a player")
+end
+if target == admin then
+return fail("You can't kick yourself")
+end
+local reason = tostring(args.Reason or "Removed by an admin")
+target:Kick(reason:sub(1, 120))
+return ok("Kicked " .. target.Name)
+end
+
+actions.Bring = function(admin, args)
+local target = targetOf(admin, args)
+local myRoot, theirRoot = rootOf(admin), rootOf(target)
+if not (target and myRoot and theirRoot) then
+return fail("Can't teleport right now")
+end
+target.Character:PivotTo(myRoot.CFrame * CFrame.new(0, 0, -5))
+return ok("Brought " .. target.Name)
+end
+
+actions.Goto = function(admin, args)
+local target = targetOf(admin, args)
+local myRoot, theirRoot = rootOf(admin), rootOf(target)
+if not (target and myRoot and theirRoot) then
+return fail("Can't teleport right now")
+end
+admin.Character:PivotTo(theirRoot.CFrame * CFrame.new(0, 0, 5))
+return ok("Teleported to " .. target.Name)
+end
+
+actions.UnlockPlot = function(admin, args)
+local target = targetOf(admin, args)
+local plot = target and ctx.Plots.ofPlayer(target)
+if not plot then
+return fail("That player has no base")
+end
+ctx.Plots.unlock(plot, true)
+return ok("Unlocked " .. target.Name .. "'s base and reset its cooldown")
+end
+
+actions.ClearCarry = function(admin, args)
+local target = targetOf(admin, args)
+if not target then
+return fail("Pick a player")
+end
+ctx.CrystalSvc.release(target)
+return ok("Released " .. target.Name .. "'s crystal")
+end
+
+actions.GiveCrystal = function(admin, args)
+local target = targetOf(admin, args)
+local def = Crystals.ById[args.TypeId]
+local weight = clampNumber(args.Weight, 1, 100000)
+if not (target and def and weight) then
+return fail("Pick a player, a crystal type and a weight")
+end
+local success, why = ctx.CrystalSvc.giveTo(target, def, math.floor(weight))
+if not success then
+return fail("Couldn't give crystal: " .. tostring(why))
+end
+return ok(string.format("Gave %s kg %s to %s", tostring(math.floor(weight)), def.Name, target.Name))
+end
+
+actions.SpawnCrystal = function(admin, args)
+local def = Crystals.ById[args.TypeId]
+local weight = clampNumber(args.Weight, 1, 100000)
+local root = rootOf(admin)
+if not (def and weight and root) then
+return fail("Pick a crystal type and a weight")
+end
+local pos = (root.CFrame * CFrame.new(0, 0, -9)).Position
+ctx.CrystalSvc.spawnAt(def, math.floor(weight), pos)
+return ok(string.format("Spawned %s kg %s", tostring(math.floor(weight)), def.Name))
+end
+
+actions.CrystalRain = function(admin, args)
+local count = clampNumber(args.Count, 1, 60)
+if not count then
+return fail("Enter a count")
+end
+ctx.CrystalSvc.rain(math.floor(count))
+return ok("Rained " .. math.floor(count) .. " crystals onto the field")
+end
+
+actions.ClearField = function()
+local n = ctx.CrystalSvc.clearField()
+return ok("Removed " .. n .. " field crystals")
+end
+
+actions.Announce = function(admin, args)
+local text = tostring(args.Text or "")
+text = text:sub(1, 140)
+if text:gsub("%s", "") == "" then
+return fail("Type a message first")
+end
+ctx.Remotes.Announce:FireAllClients(text)
+return ok("Announcement sent")
+end
+
+actions.SetSpeed = function(admin, args)
+local target = targetOf(admin, args)
+local mult = clampNumber(args.Mult, 0.2, 6)
+if not (target and mult) then
+return fail("Enter a multiplier between 0.2 and 6")
+end
+ctx.State.get(target).SpeedMult = mult
+ctx.State.refreshSpeed(target)
+return ok(string.format("%s speed x%.2f", target.Name, mult))
+end
+
+actions.SetGod = function(admin, args)
+local target = targetOf(admin, args)
+if not target then
+return fail("Pick a player")
+end
+local st = ctx.State.get(target)
+st.God = args.On == true
+Admin.applyGod(target)
+return ok(string.format("God mode %s for %s", if st.God then "ON" else "OFF", target.Name))
+end
+
+actions.Heal = function(admin, args)
+local target = targetOf(admin, args)
+local humanoid = target and target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+if not humanoid then
+return fail("No character")
+end
+humanoid.Health = humanoid.MaxHealth
+return ok("Healed " .. target.Name)
+end
+
+
+
+
+function Admin.init(c)
+ctx = c
+ctx.Remotes.Admin.OnServerInvoke = function(player, action, args)
+if not Admin.isAdmin(player) then
+warn(string.format("[Steal a Crystal] %s (%d) tried to use the admin remote without permission.", player.Name, player.UserId))
+return { ok = false, msg = "Not authorized" }
+end
+if type(action) ~= "string" or not actions[action] then
+return fail("Unknown action")
+end
+if type(args) ~= "table" then
+args = {}
+end
+local success, result = pcall(actions[action], player, args)
+if not success then
+warn("[Steal a Crystal] admin action '" .. action .. "' errored: " .. tostring(result))
+return fail("Action failed")
+end
+if action ~= "ListPlayers" then
+print(string.format("[Admin] %s ran %s -> %s", player.Name, action, tostring(result.msg)))
+end
+return result
+end
+end
+
+return Admin
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">CrystalSvc</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+local LowPoly = require(Shared:WaitForChild("LowPoly"))
+local Util = require(Shared:WaitForChild("Util"))
+
+local CrystalSvc = {}
+
+local ctx = nil
+local map = nil
+local folder = nil
+local rng = Random.new()
+
+
+
+
+function CrystalSvc.setState(model, state)
+model:SetAttribute("State", state)
+local prompt = model:FindFirstChildWhichIsA("ProximityPrompt", true)
+if prompt then
+prompt.Enabled = (state == "Field")
+end
+end
+
+
+function CrystalSvc.freeze(model)
+
+for _, d in model:GetDescendants() do
+if d:IsA("WeldConstraint") then
+d:Destroy()
+end
+end
+for _, d in model:GetDescendants() do
+if d:IsA("BasePart") then
+d.Anchored = true
+end
+end
+end
+
+function CrystalSvc.setScale(model, s)
+local H = model:GetAttribute("Height") or 5
+model:ScaleTo(s)
+model:SetAttribute("Scale", s)
+local core = model.PrimaryPart
+local info = core and core:FindFirstChild("Info")
+if info then
+info.StudsOffsetWorldSpace = Vector3.new(0, H * s / 2 + 1.8, 0)
+end
+local prompt = model:FindFirstChildWhichIsA("ProximityPrompt", true)
+if prompt then
+prompt.MaxActivationDistance = 8 + H * s * 0.5
+end
+end
+
+local function groundY(position, ignore)
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Exclude
+local list = { folder }
+for _, p in Players:GetPlayers() do
+if p.Character then
+table.insert(list, p.Character)
+end
+end
+if ignore then
+table.insert(list, ignore)
+end
+params.FilterDescendantsInstances = list
+local hit = workspace:Raycast(position + Vector3.new(0, 6, 0), Vector3.new(0, -60, 0), params)
+if hit then
+return hit.Position.Y
+end
+return 0.2
+end
+
+
+function CrystalSvc.makeLoose(model, position)
+local H = model:GetAttribute("Height") or 5
+CrystalSvc.freeze(model)
+CrystalSvc.setScale(model, 1)
+local y = groundY(position, model)
+model:PivotTo(CFrame.new(position.X, y + H / 2, position.Z) * CFrame.Angles(0, rng:NextNumber() * math.pi * 2, 0))
+model:SetAttribute("OwnerUserId", 0)
+CrystalSvc.setState(model, "Field")
+model.Parent = folder
+end
+
+
+
+
+function CrystalSvc.create(def, weight)
+local height = Crystals.height(weight)
+local model = LowPoly.crystal(def, weight, height, rng:NextInteger(1, 999999))
+local income = Crystals.income(def, weight)
+
+model:SetAttribute("TypeId", def.Id)
+model:SetAttribute("CrystalName", def.Name)
+model:SetAttribute("Rarity", def.Rarity)
+model:SetAttribute("Weight", weight)
+model:SetAttribute("Income", income)
+model:SetAttribute("Height", height)
+model:SetAttribute("Scale", 1)
+model:SetAttribute("Yaw", rng:NextNumber() * math.pi * 2)
+model:SetAttribute("OwnerUserId", 0)
+model:SetAttribute("State", "Field")
+
+local core = model.PrimaryPart
+
+
+local promptPart = Instance.new("Part")
+promptPart.Name = "PromptPart"
+promptPart.Size = Vector3.new(1, 1, 1)
+promptPart.Transparency = 1
+promptPart.Anchored = true
+promptPart.CanCollide = false
+promptPart.CanQuery = false
+promptPart.CanTouch = false
+promptPart.CastShadow = false
+promptPart.Massless = true
+promptPart.CFrame = CFrame.new(0, -height / 2 + math.min(height / 2, 2.4), 0)
+promptPart.Parent = model
+
+local prompt = Instance.new("ProximityPrompt")
+prompt.ActionText = "Grab"
+prompt.ObjectText = def.Name .. "  " .. Util.formatWeight(weight)
+prompt.HoldDuration = 0.35 + 0.9 * math.min(1, weight / 2000)
+prompt.MaxActivationDistance = 8 + height * 0.5
+prompt.RequiresLineOfSight = false
+prompt.KeyboardKeyCode = Enum.KeyCode.E
+prompt.Style = Enum.ProximityPromptStyle.Custom
+prompt:SetAttribute("Kind", "Crystal")
+CollectionService:AddTag(prompt, "DynPrompt")
+prompt.Parent = promptPart
+prompt.Triggered:Connect(function(player)
+CrystalSvc.onLooseTriggered(player, model)
+end)
+
+
+local gui = Instance.new("BillboardGui")
+gui.Name = "Info"
+gui.Size = UDim2.fromOffset(200, 54)
+gui.StudsOffsetWorldSpace = Vector3.new(0, height / 2 + 1.8, 0)
+gui.AlwaysOnTop = false
+gui.MaxDistance = 95
+gui.LightInfluence = 0
+gui.Adornee = core
+gui.Parent = core
+
+local rarityColor = Crystals.RarityColors[def.Rarity]
+local name = Instance.new("TextLabel")
+name.BackgroundTransparency = 1
+name.Size = UDim2.fromScale(1, 0.52)
+name.Text = def.Rarity:upper() .. "  " .. def.Name
+name.TextScaled = true
+name.Font = Enum.Font.GothamBlack
+name.TextColor3 = rarityColor
+name.TextStrokeTransparency = 0.3
+name.TextStrokeColor3 = Color3.fromRGB(10, 10, 25)
+name.Parent = gui
+local detail = Instance.new("TextLabel")
+detail.BackgroundTransparency = 1
+detail.Position = UDim2.fromScale(0, 0.54)
+detail.Size = UDim2.fromScale(1, 0.42)
+detail.Text = Util.formatWeight(weight) .. "  |  " .. Util.abbrev(income) .. " gems/s"
+detail.TextScaled = true
+detail.Font = Enum.Font.GothamBold
+detail.TextColor3 = Color3.fromRGB(245, 248, 255)
+detail.TextStrokeTransparency = 0.3
+detail.TextStrokeColor3 = Color3.fromRGB(10, 10, 25)
+detail.Parent = gui
+
+if def.Rarity == "Legendary" or def.Rarity == "Mythic" then
+local sparkles = Instance.new("Sparkles")
+sparkles.SparkleColor = def.Color
+sparkles.Parent = core
+end
+
+return model
+end
+
+function CrystalSvc.spawnAt(def, weight, position)
+local model = CrystalSvc.create(def, weight)
+CrystalSvc.makeLoose(model, position)
+return model
+end
+
+
+
+
+local function fieldCrystals()
+local list = {}
+for _, m in folder:GetChildren() do
+if m:IsA("Model") and m:GetAttribute("State") == "Field" then
+table.insert(list, m)
+end
+end
+return list
+end
+
+local function randomFieldPosition(def)
+local rank = Crystals.RarityIndex[def.Rarity]
+local t = (rank - 1) / 5
+local rMax = Config.FieldRadius - 10
+local rMin = Config.PlazaRadius + 9
+local existing = fieldCrystals()
+local best = nil
+for _ = 1, 8 do
+local r = math.clamp(rMax - (rMax - rMin) * t + (rng:NextNumber() - 0.5) * 14, rMin, rMax)
+local a = rng:NextNumber() * math.pi * 2
+local p = Vector3.new(math.cos(a) * r, 10, math.sin(a) * r)
+local ok = true
+for _, m in existing do
+if (m:GetPivot().Position - p).Magnitude < 8 then
+ok = false
+break
+end
+end
+best = p
+if ok then
+break
+end
+end
+return best
+end
+
+function CrystalSvc.spawnRandomOnField()
+local def, weight = Crystals.roll(rng)
+return CrystalSvc.spawnAt(def, weight, randomFieldPosition(def))
+end
+
+function CrystalSvc.clearField()
+local n = 0
+for _, m in fieldCrystals() do
+m:Destroy()
+n += 1
+end
+return n
+end
+
+function CrystalSvc.rain(count)
+for _ = 1, count do
+CrystalSvc.spawnRandomOnField()
+end
+end
+
+
+
+
+local function setCarryAttributes(player, model)
+if model then
+player:SetAttribute("Carrying", true)
+player:SetAttribute("CarryName", model:GetAttribute("CrystalName"))
+player:SetAttribute("CarryWeight", model:GetAttribute("Weight"))
+player:SetAttribute("CarryRarity", model:GetAttribute("Rarity"))
+else
+player:SetAttribute("Carrying", false)
+player:SetAttribute("CarryName", "")
+player:SetAttribute("CarryWeight", 0)
+player:SetAttribute("CarryRarity", "")
+end
+end
+
+local function attach(player, model)
+local character = player.Character
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+if not hrp then
+return false
+end
+local H = model:GetAttribute("Height") or 5
+local s = math.min(1, Config.CarryMaxHeight / H)
+CrystalSvc.freeze(model)
+CrystalSvc.setScale(model, s)
+model:PivotTo(hrp.CFrame * CFrame.new(0, 3.3 + H * s / 2, 0))
+
+local core = model.PrimaryPart
+for _, d in model:GetDescendants() do
+if d:IsA("BasePart") and d ~= core then
+local w = Instance.new("WeldConstraint")
+w.Name = "CarryWeld"
+w.Part0 = core
+w.Part1 = d
+w.Parent = d
+end
+end
+local hold = Instance.new("WeldConstraint")
+hold.Name = "CarryAttach"
+hold.Part0 = hrp
+hold.Part1 = core
+hold.Parent = core
+for _, d in model:GetDescendants() do
+if d:IsA("BasePart") then
+d.Anchored = false
+d.CanCollide = false
+d.Massless = true
+end
+end
+return true
+end
+
+local function withinReach(player, part, distance)
+local character = player.Character
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+return hrp ~= nil and part ~= nil and (hrp.Position - part.Position).Magnitude <= distance + Config.GrabDistanceSlack
+end
+
+function CrystalSvc.onLooseTriggered(player, model)
+if not model.Parent or model:GetAttribute("State") ~= "Field" then
+return
+end
+local promptPart = model:FindFirstChild("PromptPart")
+local prompt = promptPart and promptPart:FindFirstChildWhichIsA("ProximityPrompt")
+if not (promptPart and prompt and withinReach(player, promptPart, prompt.MaxActivationDistance)) then
+return
+end
+CrystalSvc.pickUp(player, model)
+end
+
+
+function CrystalSvc.pickUp(player, model)
+if not model or not model.Parent then
+return false
+end
+local character = player.Character
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+if not humanoid or humanoid.Health <= 0 then
+return false
+end
+local st = ctx.State.get(player)
+if st.Carry then
+ctx.notify(player, "You are already carrying a crystal.", "warn")
+return false
+end
+if st.Workout then
+ctx.notify(player, "Finish your workout first.", "warn")
+return false
+end
+
+local state = model:GetAttribute("State")
+if state ~= "Field" and state ~= "Placed" then
+return false
+end
+
+local weight = model:GetAttribute("Weight") or 1
+local name = model:GetAttribute("CrystalName") or "Crystal"
+local strength = ctx.Data.get(player).Strength
+if weight > strength then
+ctx.notify(player, string.format("Too heavy! %s weighs %s kg, you can lift %s kg. Train at your gym!", name, Util.comma(weight), Util.comma(strength)), "bad")
+return false
+end
+
+local origin
+local victim = nil
+if state == "Placed" then
+local ped = ctx.Plots.pedestalOf(model)
+if not ped then
+return false
+end
+local plot = ped.Plot
+local owner = plot.Owner
+if owner ~= player then
+if plot.Locked then
+ctx.notify(player, "That base is locked!", "bad")
+return false
+end
+origin = { PlotIndex = plot.Index, PedIndex = ped.Index, OwnerUserId = owner and owner.UserId or 0, Stolen = true }
+victim = owner
+ctx.Plots.alarm(plot)
+if owner then
+ctx.notify(owner, string.format("%s is stealing your %s!", player.DisplayName, name), "bad")
+end
+else
+origin = { PlotIndex = plot.Index, PedIndex = ped.Index, OwnerUserId = player.UserId, Stolen = false }
+end
+ctx.Plots.clearPedestal(ped)
+else
+origin = { Field = true }
+end
+
+model:SetAttribute("OwnerUserId", 0)
+CrystalSvc.setState(model, "Carried")
+st.Carry = model
+st.CarryOrigin = origin
+if not attach(player, model) then
+
+st.Carry = nil
+st.CarryOrigin = nil
+CrystalSvc.sendHome(model, origin, nil)
+return false
+end
+setCarryAttributes(player, model)
+ctx.State.refreshSpeed(player)
+if origin.Stolen then
+local who = if victim then victim.DisplayName else "someone"
+ctx.notify(player, string.format("You grabbed %s's %s! Run it back to your base!", who, name), "good")
+else
+ctx.notify(player, string.format("Picked up %s (%s kg).", name, Util.comma(weight)), "good")
+end
+return true
+end
+
+function CrystalSvc.place(player, ped)
+local st = ctx.State.get(player)
+local model = st.Carry
+if not model then
+return false
+end
+local plot = ped.Plot
+if plot.Owner ~= player then
+ctx.notify(player, "That's not your base. Take it to a pedestal in your own base!", "warn")
+return false
+end
+if ped.Crystal then
+ctx.notify(player, "That pedestal is already taken.", "warn")
+return false
+end
+local origin = st.CarryOrigin
+st.Carry = nil
+st.CarryOrigin = nil
+setCarryAttributes(player, nil)
+ctx.Plots.setPedestal(ped, model)
+ctx.State.refreshSpeed(player)
+local income = model:GetAttribute("Income") or 0
+if origin and origin.Stolen then
+ctx.notify(player, string.format("Stolen! %s is yours now (+%s gems/s).", model:GetAttribute("CrystalName"), Util.abbrev(income)), "good")
+else
+ctx.notify(player, string.format("%s placed: +%s gems/s", model:GetAttribute("CrystalName"), Util.abbrev(income)), "good")
+end
+return true
+end
+
+
+function CrystalSvc.sendHome(model, origin, dropPosition)
+CrystalSvc.freeze(model)
+if origin and origin.PlotIndex then
+local plot = ctx.Plots.byIndex(origin.PlotIndex)
+local owner = plot and plot.Owner
+if owner and owner.UserId == origin.OwnerUserId then
+local ped = plot.Pedestals[origin.PedIndex]
+if ped.Crystal then
+ped = ctx.Plots.findFreePedestal(plot)
+end
+if ped then
+ctx.Plots.setPedestal(ped, model)
+ctx.notify(owner, string.format("Your %s is back on its pedestal.", model:GetAttribute("CrystalName")), "good")
+return
+end
+end
+end
+local pos = dropPosition or model:GetPivot().Position
+
+for _, plot in map.Plots do
+if ctx.Plots.contains(plot, pos) then
+local a = rng:NextNumber() * math.pi * 2
+pos = Vector3.new(math.cos(a) * (Config.PlazaRadius + 10), 10, math.sin(a) * (Config.PlazaRadius + 10))
+break
+end
+end
+CrystalSvc.makeLoose(model, pos)
+end
+
+
+function CrystalSvc.release(player)
+local st = ctx.State.get(player)
+local model = st.Carry
+if not model then
+return
+end
+local origin = st.CarryOrigin
+st.Carry = nil
+st.CarryOrigin = nil
+setCarryAttributes(player, nil)
+
+local pos = nil
+local character = player.Character
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+if hrp then
+pos = hrp.Position
+end
+if model.Parent then
+
+CrystalSvc.freeze(model)
+CrystalSvc.sendHome(model, origin, pos)
+end
+ctx.State.refreshSpeed(player)
+end
+
+function CrystalSvc.giveTo(player, def, weight)
+local st = ctx.State.get(player)
+if st.Carry then
+return false, "already carrying"
+end
+local model = CrystalSvc.create(def, weight)
+model.Parent = folder
+CrystalSvc.setState(model, "Carried")
+st.Carry = model
+st.CarryOrigin = { Field = true }
+if not attach(player, model) then
+st.Carry = nil
+st.CarryOrigin = nil
+model:Destroy()
+return false, "no character"
+end
+setCarryAttributes(player, model)
+ctx.State.refreshSpeed(player)
+return true
+end
+
+
+
+
+function CrystalSvc.init(c, m)
+ctx = c
+map = m
+folder = m.CrystalFolder
+
+ctx.Remotes.DropCrystal.OnServerEvent:Connect(function(player)
+CrystalSvc.release(player)
+end)
+
+
+task.spawn(function()
+for _ = 1, Config.FieldMaxCrystals do
+CrystalSvc.spawnRandomOnField()
+end
+while true do
+task.wait(Config.FieldSpawnInterval)
+if #fieldCrystals() < Config.FieldMaxCrystals then
+CrystalSvc.spawnRandomOnField()
+end
+end
+end)
+end
+
+return CrystalSvc
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">Data</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+local Trails = require(Shared:WaitForChild("Trails"))
+
+local Data = {}
+
+local profiles = {}
+local store = nil
+local ctx = nil
+
+local MAX_GEMS = 1e15
+
+local function defaultProfile()
+return {
+Gems = Config.StartGems,
+Strength = Config.StartStrength,
+Trails = { "Dust" },
+Equipped = "",
+Crystals = {},
+}
+end
+
+local function reconcile(saved)
+local profile = defaultProfile()
+if type(saved) ~= "table" then
+return profile
+end
+if type(saved.Gems) == "number" then
+profile.Gems = math.clamp(math.floor(saved.Gems), 0, MAX_GEMS)
+end
+if type(saved.Strength) == "number" then
+profile.Strength = math.clamp(math.floor(saved.Strength), 1, 1e9)
+end
+if type(saved.Trails) == "table" then
+local seen = {}
+profile.Trails = {}
+for _, id in saved.Trails do
+if type(id) == "string" and Trails.ById[id] and not seen[id] then
+seen[id] = true
+table.insert(profile.Trails, id)
+end
+end
+if not seen.Dust then
+table.insert(profile.Trails, 1, "Dust")
+end
+end
+if type(saved.Equipped) == "string" and (saved.Equipped == "" or Trails.ById[saved.Equipped]) then
+profile.Equipped = saved.Equipped
+end
+if type(saved.Crystals) == "table" then
+for _, c in saved.Crystals do
+if type(c) == "table" and Crystals.ById[c.t] and type(c.w) == "number" and #profile.Crystals < Config.PedestalsPerPlot then
+table.insert(profile.Crystals, { t = c.t, w = math.clamp(math.floor(c.w), 1, 100000) })
+end
+end
+end
+return profile
+end
+
+local function keyFor(player)
+return "Player_" .. player.UserId
+end
+
+function Data.init(c)
+ctx = c
+local ok, ds = pcall(function()
+return DataStoreService:GetDataStore(Config.DataStoreName)
+end)
+if ok then
+store = ds
+end
+if store and RunService:IsStudio() then
+local probeOk, err = pcall(function()
+return store:GetAsync("__probe")
+end)
+if not probeOk then
+warn("[Steal a Crystal] DataStore is not available in Studio right now (" .. tostring(err) .. "). "
+.. "Progress will not be saved. Publish the place and enable Game Settings > Security > 'Enable Studio Access to API Services' to test saving.")
+store = nil
+end
+end
+
+game:BindToClose(function()
+local pending = 0
+for _, player in Players:GetPlayers() do
+pending += 1
+task.spawn(function()
+Data.save(player)
+pending -= 1
+end)
+end
+local t0 = os.clock()
+while pending > 0 and os.clock() - t0 < 25 do
+task.wait()
+end
+end)
+
+task.spawn(function()
+while true do
+task.wait(Config.AutoSaveSeconds)
+for _, player in Players:GetPlayers() do
+task.spawn(Data.save, player)
+task.wait(0.4)
+end
+end
+end)
+end
+
+function Data.load(player)
+local saved = nil
+local failed = false
+if store then
+failed = true
+for attempt = 1, 3 do
+local ok, result = pcall(function()
+return store:GetAsync(keyFor(player))
+end)
+if ok then
+saved = result
+failed = false
+break
+end
+warn("[Steal a Crystal] load attempt " .. attempt .. " failed for " .. player.Name .. ": " .. tostring(result))
+task.wait(1.5)
+end
+end
+local profile = reconcile(saved)
+
+profile.NoSave = failed
+profiles[player] = profile
+
+local stats = Instance.new("Folder")
+stats.Name = "leaderstats"
+local gems = Instance.new("NumberValue")
+gems.Name = "Gems"
+gems.Parent = stats
+local str = Instance.new("NumberValue")
+str.Name = "Strength"
+str.Parent = stats
+stats.Parent = player
+
+Data.sync(player)
+return profile, failed
+end
+
+function Data.get(player)
+return profiles[player]
+end
+
+function Data.sync(player)
+local profile = profiles[player]
+if not profile then
+return
+end
+player:SetAttribute("Gems", profile.Gems)
+player:SetAttribute("Strength", profile.Strength)
+player:SetAttribute("Trails", table.concat(profile.Trails, ","))
+player:SetAttribute("Equipped", profile.Equipped)
+local stats = player:FindFirstChild("leaderstats")
+if stats then
+stats.Gems.Value = profile.Gems
+stats.Strength.Value = profile.Strength
+end
+end
+
+function Data.addGems(player, amount)
+local profile = profiles[player]
+if not profile then
+return
+end
+profile.Gems = math.clamp(math.floor(profile.Gems + amount), 0, MAX_GEMS)
+Data.sync(player)
+end
+
+function Data.setGems(player, amount)
+local profile = profiles[player]
+if not profile then
+return
+end
+profile.Gems = math.clamp(math.floor(amount), 0, MAX_GEMS)
+Data.sync(player)
+end
+
+function Data.addStrength(player, amount)
+local profile = profiles[player]
+if not profile then
+return
+end
+profile.Strength = math.clamp(math.floor(profile.Strength + amount), 1, 1e9)
+Data.sync(player)
+if ctx then
+ctx.State.refreshSpeed(player)
+end
+end
+
+function Data.setStrength(player, amount)
+local profile = profiles[player]
+if not profile then
+return
+end
+profile.Strength = math.clamp(math.floor(amount), 1, 1e9)
+Data.sync(player)
+if ctx then
+ctx.State.refreshSpeed(player)
+end
+end
+
+function Data.ownsTrail(player, id)
+local profile = profiles[player]
+if not profile then
+return false
+end
+return table.find(profile.Trails, id) ~= nil
+end
+
+function Data.giveTrail(player, id)
+local profile = profiles[player]
+if not profile or not Trails.ById[id] or Data.ownsTrail(player, id) then
+return
+end
+table.insert(profile.Trails, id)
+Data.sync(player)
+end
+
+function Data.setEquipped(player, id)
+local profile = profiles[player]
+if not profile then
+return
+end
+profile.Equipped = id
+Data.sync(player)
+end
+
+function Data.reset(player)
+local fresh = defaultProfile()
+fresh.NoSave = profiles[player] and profiles[player].NoSave or false
+profiles[player] = fresh
+Data.sync(player)
+end
+
+function Data.save(player)
+local profile = profiles[player]
+if not profile or profile.NoSave or not store then
+return false
+end
+if profile.Saving then
+return false
+end
+profile.Saving = true
+
+if ctx then
+profile.Crystals = ctx.Plots.snapshot(player)
+end
+local payload = {
+Gems = profile.Gems,
+Strength = profile.Strength,
+Trails = table.clone(profile.Trails),
+Equipped = profile.Equipped,
+Crystals = profile.Crystals,
+SavedAt = os.time(),
+}
+local ok, err = pcall(function()
+store:UpdateAsync(keyFor(player), function()
+return payload
+end)
+end)
+profile.Saving = false
+if not ok then
+warn("[Steal a Crystal] save failed for " .. player.Name .. ": " .. tostring(err))
+end
+return ok
+end
+
+function Data.unload(player)
+profiles[player] = nil
+end
+
+return Data
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">Gym</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Util = require(Shared:WaitForChild("Util"))
+
+local Gym = {}
+
+local ctx = nil
+
+local UP = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local DOWN = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+local function animate(station)
+if station.Animating then
+return
+end
+station.Animating = true
+for _, item in station.Lift do
+TweenService:Create(item.Part, UP, { CFrame = item.Base * CFrame.new(0, 2.8, 0) }):Play()
+end
+task.delay(0.24, function()
+for _, item in station.Lift do
+TweenService:Create(item.Part, DOWN, { CFrame = item.Base }):Play()
+end
+end)
+task.delay(0.58, function()
+station.Animating = false
+end)
+end
+
+function Gym.stop(player, reason)
+local st = ctx.State.get(player)
+if not st.Workout then
+return
+end
+st.Workout = nil
+ctx.State.refreshSpeed(player)
+if player.Parent then
+ctx.Remotes.WorkoutEnd:FireClient(player, reason or "stopped")
+end
+end
+
+function Gym.start(player, station)
+local plot = station.Plot
+if plot.Owner ~= player then
+ctx.notify(player, "That gym belongs to someone else.", "warn")
+return
+end
+local st = ctx.State.get(player)
+if st.Workout then
+return
+end
+if st.Carry then
+ctx.notify(player, "Put your crystal down before you train.", "warn")
+return
+end
+local character = player.Character
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+if not (humanoid and hrp and humanoid.Health > 0) then
+return
+end
+if (hrp.Position - station.PromptPart.Position).Magnitude > station.Prompt.MaxActivationDistance + Config.GrabDistanceSlack then
+return
+end
+local strength = ctx.Data.get(player).Strength
+if strength < station.Def.MinStrength then
+ctx.notify(player, string.format("%s needs %s kg strength (you have %s kg). Warm up on a lighter machine first!", station.Def.Name, Util.comma(station.Def.MinStrength), Util.comma(strength)), "warn")
+return
+end
+
+st.Workout = { Station = station, LastRep = 0, Combo = 0 }
+character:PivotTo(station.Spot)
+hrp.AssemblyLinearVelocity = Vector3.zero
+ctx.State.refreshSpeed(player)
+ctx.Remotes.WorkoutStart:FireClient(player, {
+Id = station.Def.Id,
+Name = station.Def.Name,
+Gain = station.Def.Gain,
+})
+end
+
+function Gym.rep(player, clientTime)
+local st = ctx.State.get(player)
+local w = st.Workout
+if not w or type(clientTime) ~= "number" or clientTime ~= clientTime then
+return
+end
+local now = workspace:GetServerTimeNow()
+if now - w.LastRep < Config.GymRepCooldown then
+return
+end
+w.LastRep = now
+
+
+local t = math.clamp(clientTime, now - 0.4, now)
+local grade = Config.GymGrade(Config.GymBarPosition(t))
+local gain = 0
+if grade == "Miss" then
+w.Combo = 0
+else
+w.Combo += 1
+local mult = if grade == "Perfect" then Config.GymPerfectMult else Config.GymGoodMult
+local combo = 1 + Config.GymComboBonus * math.min(w.Combo - 1, Config.GymComboMax)
+gain = math.max(1, math.floor(w.Station.Def.Gain * mult * combo + 0.5))
+ctx.Data.addStrength(player, gain)
+animate(w.Station)
+end
+ctx.Remotes.WorkoutResult:FireClient(player, grade, gain, w.Combo)
+end
+
+function Gym.init(c, map)
+ctx = c
+for _, plot in map.Plots do
+for _, station in plot.Stations do
+station.Prompt.Triggered:Connect(function(player)
+Gym.start(player, station)
+end)
+end
+end
+ctx.Remotes.WorkoutRep.OnServerEvent:Connect(Gym.rep)
+ctx.Remotes.WorkoutStop.OnServerEvent:Connect(function(player)
+Gym.stop(player, "stopped")
+end)
+
+
+task.spawn(function()
+while true do
+task.wait(0.5)
+for _, player in Players:GetPlayers() do
+local w = ctx.State.get(player).Workout
+if w then
+local character = player.Character
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+if not (humanoid and hrp) or humanoid.Health <= 0 or (hrp.Position - w.Station.Spot.Position).Magnitude > 12 or w.Station.Plot.Owner ~= player then
+Gym.stop(player, "interrupted")
+end
+end
+end
+end
+end)
+end
+
+return Gym
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">MapBuilder</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+local Lighting = game:GetService("Lighting")
+local PhysicsService = game:GetService("PhysicsService")
+local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local LowPoly = require(Shared:WaitForChild("LowPoly"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+
+local MapBuilder = {}
+
+local SMOOTH = Enum.Material.SmoothPlastic
+local PI = math.pi
+
+
+
+
+local function part(parent, name, size, cf, color, material, props)
+local p = Instance.new("Part")
+p.Name = name
+p.Size = size
+p.CFrame = cf
+p.Color = color
+p.Material = material or SMOOTH
+p.Anchored = true
+p.TopSurface = Enum.SurfaceType.Smooth
+p.BottomSurface = Enum.SurfaceType.Smooth
+if props then
+for k, v in props do
+p[k] = v
+end
+end
+p.Parent = parent
+return p
+end
+
+local function wedge(parent, name, size, cf, color, props)
+local w = Instance.new("WedgePart")
+w.Name = name
+w.Size = size
+w.CFrame = cf
+w.Color = color
+w.Material = SMOOTH
+w.Anchored = true
+w.TopSurface = Enum.SurfaceType.Smooth
+w.BottomSurface = Enum.SurfaceType.Smooth
+if props then
+for k, v in props do
+w[k] = v
+end
+end
+w.Parent = parent
+return w
+end
+
+local function ghost(parent, name, size, cf, props)
+local p = part(parent, name, size, cf, Color3.new(1, 1, 1), SMOOTH, { Transparency = 1, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false })
+if props then
+for k, v in props do
+p[k] = v
+end
+end
+return p
+end
+
+local function darker(c, f)
+return Color3.new(c.R * f, c.G * f, c.B * f)
+end
+
+local function textSign(parent, name, text, size, cf, bg, fg)
+local p = part(parent, name, size, cf, bg, SMOOTH, { CanCollide = false })
+local gui = Instance.new("SurfaceGui")
+gui.Face = Enum.NormalId.Front
+gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+gui.PixelsPerStud = 40
+gui.Parent = p
+local label = Instance.new("TextLabel")
+label.Size = UDim2.fromScale(1, 1)
+label.BackgroundTransparency = 1
+label.Text = text
+label.TextScaled = true
+label.Font = Enum.Font.GothamBlack
+label.TextColor3 = fg
+label.Parent = gui
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0.12, 0)
+pad.PaddingBottom = UDim.new(0.12, 0)
+pad.PaddingLeft = UDim.new(0.05, 0)
+pad.PaddingRight = UDim.new(0.05, 0)
+pad.Parent = label
+return p, label
+end
+
+local function billboard(adornee, sizeStuds, offset, maxDistance)
+local gui = Instance.new("BillboardGui")
+gui.Size = UDim2.fromScale(sizeStuds.X, sizeStuds.Y)
+gui.StudsOffsetWorldSpace = offset
+gui.AlwaysOnTop = false
+gui.MaxDistance = maxDistance or 150
+gui.LightInfluence = 0
+gui.Adornee = adornee
+gui.Parent = adornee
+return gui
+end
+
+local function label(parent, text, color, size, position, font)
+local l = Instance.new("TextLabel")
+l.BackgroundTransparency = 1
+l.Size = size
+l.Position = position or UDim2.fromScale(0, 0)
+l.Text = text
+l.TextScaled = true
+l.Font = font or Enum.Font.GothamBlack
+l.TextColor3 = color
+l.TextStrokeTransparency = 0.35
+l.TextStrokeColor3 = Color3.fromRGB(10, 10, 25)
+l.Parent = parent
+return l
+end
+
+local function newPrompt(parent, kind, actionText, objectText, hold, distance)
+local pr = Instance.new("ProximityPrompt")
+pr.ActionText = actionText
+pr.ObjectText = objectText
+pr.HoldDuration = hold or 0
+pr.MaxActivationDistance = distance or 10
+pr.RequiresLineOfSight = false
+pr.KeyboardKeyCode = Enum.KeyCode.E
+pr.Style = Enum.ProximityPromptStyle.Custom
+pr:SetAttribute("Kind", kind)
+CollectionService:AddTag(pr, "DynPrompt")
+pr.Parent = parent
+return pr
+end
+MapBuilder.newPrompt = newPrompt
+
+local function registerGroup(name)
+pcall(function()
+PhysicsService:RegisterCollisionGroup(name)
+end)
+end
+
+
+
+
+local function setupLighting()
+Lighting.ClockTime = 14.2
+Lighting.Brightness = 2.4
+Lighting.Ambient = Color3.fromRGB(120, 128, 160)
+Lighting.OutdoorAmbient = Color3.fromRGB(150, 158, 190)
+Lighting.ColorShift_Top = Color3.fromRGB(255, 244, 225)
+Lighting.EnvironmentDiffuseScale = 0.6
+Lighting.EnvironmentSpecularScale = 0.5
+Lighting.GlobalShadows = true
+
+local function ensure(class, name)
+local inst = Lighting:FindFirstChild(name)
+if not inst then
+inst = Instance.new(class)
+inst.Name = name
+inst.Parent = Lighting
+end
+return inst
+end
+local atmo = ensure("Atmosphere", "LowPolyAtmosphere")
+atmo.Density = 0.28
+atmo.Offset = 0.2
+atmo.Color = Color3.fromRGB(205, 215, 245)
+atmo.Decay = Color3.fromRGB(255, 205, 190)
+atmo.Glare = 0.1
+atmo.Haze = 1.2
+
+local bloom = ensure("BloomEffect", "LowPolyBloom")
+bloom.Intensity = 0.35
+bloom.Size = 22
+bloom.Threshold = 1.2
+
+local cc = ensure("ColorCorrectionEffect", "LowPolyColor")
+cc.Saturation = 0.18
+cc.Contrast = 0.06
+cc.TintColor = Color3.fromRGB(255, 250, 245)
+end
+
+
+
+
+local function ringPoint(radius, angle, y)
+return Vector3.new(math.cos(angle) * radius, y, math.sin(angle) * radius)
+end
+
+local function fan(parent, radius, segments, y, thickness, color, name, collide)
+for i = 0, segments - 1 do
+local a0 = (i / segments) * PI * 2
+local a1 = ((i + 1) / segments) * PI * 2
+LowPoly.triangle(parent, Vector3.new(0, y, 0), ringPoint(radius, a0, y), ringPoint(radius, a1, y), {
+Color = LowPoly.shadeColor(color, 0.94 + ((i % 2) * 0.08)),
+Thickness = thickness,
+CanCollide = collide,
+CanQuery = true,
+Name = name,
+})
+end
+end
+
+local function buildIsland(map, folder)
+local ground = Instance.new("Folder")
+ground.Name = "Ground"
+ground.Parent = folder
+
+
+
+local R = Config.IslandRadius
+local grass = Color3.fromRGB(104, 176, 98)
+for k = 0, 5 do
+local va = ringPoint(R, k * PI / 3, -2)
+local vb = ringPoint(R, (k + 1) * PI / 3, -2)
+local mid = (va + vb) / 2
+local c = Vector3.new(0, -2, 0)
+local tint = if k % 2 == 0 then 1 else 0.93
+LowPoly.triangle(ground, c, va, mid, { Color = LowPoly.shadeColor(grass, tint), Thickness = 4, CanCollide = true, CanQuery = true, Name = "Grass" })
+LowPoly.triangle(ground, c, mid, vb, { Color = LowPoly.shadeColor(grass, tint * 0.95), Thickness = 4, CanCollide = true, CanQuery = true, Name = "Grass" })
+end
+
+
+local apex = Vector3.new(0, -105, 0)
+local dirt = Color3.fromRGB(139, 98, 70)
+for k = 0, 5 do
+local va = ringPoint(R, k * PI / 3, -4)
+local vb = ringPoint(R, (k + 1) * PI / 3, -4)
+LowPoly.triangle(ground, va, vb, apex, { Color = LowPoly.shadeColor(dirt, 0.75 + 0.1 * (k % 3)), Thickness = 0.5, Name = "Cliff" })
+
+local ledgeA = ringPoint(R * 0.62, k * PI / 3 + 0.1, -38)
+local ledgeB = ringPoint(R * 0.62, (k + 1) * PI / 3 - 0.1, -38)
+LowPoly.triangle(ground, ledgeA, ledgeB, ringPoint(R * 0.8, (k + 0.5) * PI / 3, -20), { Color = LowPoly.shadeColor(dirt, 0.6 + 0.08 * (k % 2)), Thickness = 0.5, Name = "Ledge" })
+end
+
+
+fan(ground, Config.FieldRadius, 16, 0.1, 0.2, Color3.fromRGB(222, 205, 160), "FieldFloor", false)
+fan(ground, Config.PlazaRadius, 10, 0.2, 0.4, Color3.fromRGB(176, 182, 205), "PlazaFloor", true)
+map.Ground = ground
+end
+
+local function buildPaths(map, folder)
+local paths = Instance.new("Folder")
+paths.Name = "Paths"
+paths.Parent = folder
+local from = Config.PlazaRadius - 2
+local to = Config.PlotRingRadius - Config.PlotSize / 2
+local length = to - from
+for i = 1, Config.PlotCount do
+local angle = math.rad(30 + (i - 1) * 60)
+local dir = Vector3.new(math.cos(angle), 0, math.sin(angle))
+local centre = dir * ((from + to) / 2) + Vector3.new(0, 0.15, 0)
+part(paths, "Path" .. i, Vector3.new(12, 0.3, length), CFrame.lookAt(centre, Vector3.new(0, 0.15, 0)), Color3.fromRGB(196, 178, 140), SMOOTH, { CanCollide = false })
+
+part(paths, "PathStripe" .. i, Vector3.new(1.2, 0.34, length), CFrame.lookAt(centre + Vector3.new(0, 0.01, 0), Vector3.new(0, 0.16, 0)), Config.PlotColors[i], SMOOTH, { CanCollide = false })
+end
+end
+
+local function buildTree(parent, pos, scale, seed)
+local rng = Random.new(seed)
+local trunkH = 4 * scale
+part(parent, "Trunk", Vector3.new(1.5 * scale, trunkH, 1.5 * scale), CFrame.new(pos + Vector3.new(0, trunkH / 2, 0)) * CFrame.Angles(0, rng:NextNumber() * PI, 0), Color3.fromRGB(116, 80, 56), SMOOTH, { CanCollide = false })
+local g = Color3.fromRGB(62 + rng:NextInteger(0, 30), 148 + rng:NextInteger(-12, 18), 86 + rng:NextInteger(0, 24))
+local y = trunkH * 0.7
+for layer = 1, 3 do
+local radius = (6.2 - layer * 1.5) * scale
+local height = (6.4 - layer * 0.7) * scale
+LowPoly.pyramid(parent, pos + Vector3.new(0, y, 0), radius, height, 5, { Color = g, Yaw = rng:NextNumber() * PI, Seed = seed + layer, CanCollide = false })
+y += height * 0.55
+end
+end
+
+local function insideHex(p, margin)
+local apothem = Config.IslandRadius * math.cos(math.rad(30)) - margin
+for k = 0, 2 do
+local n = Vector3.new(math.cos(k * PI / 3 + PI / 6), 0, math.sin(k * PI / 3 + PI / 6))
+if math.abs(p:Dot(n)) > apothem then
+return false
+end
+end
+return true
+end
+
+local function angleDiff(a, b)
+local d = (a - b + PI) % (PI * 2) - PI
+return math.abs(d)
+end
+
+local function buildDecor(map, folder)
+local decor = Instance.new("Folder")
+decor.Name = "Decor"
+decor.Parent = folder
+local rng = Random.new(1234)
+
+local plotAngles = {}
+for i = 1, Config.PlotCount do
+plotAngles[i] = math.rad(30 + (i - 1) * 60)
+end
+
+
+local placed = 0
+local attempts = 0
+while placed < 46 and attempts < 600 do
+attempts += 1
+local a = rng:NextNumber() * PI * 2
+local r = 204 + rng:NextNumber() * 40
+local p = ringPoint(r, a, 0)
+if insideHex(p, 8) then
+buildTree(decor, p, 0.9 + rng:NextNumber() * 0.9, rng:NextInteger(1, 99999))
+placed += 1
+end
+end
+
+
+for i = 1, Config.PlotCount do
+local a = plotAngles[i] + PI / 6
+for j = 1, 3 do
+local r = 130 + j * 22 + rng:NextNumber() * 10
+local p = ringPoint(r, a + (rng:NextNumber() - 0.5) * 0.12, 0)
+buildTree(decor, p, 0.8 + rng:NextNumber() * 0.7, rng:NextInteger(1, 99999))
+end
+end
+
+
+for i = 1, 26 do
+local a = rng:NextNumber() * PI * 2
+local r = Config.FieldRadius + 6 + rng:NextNumber() * 16
+local nearPath = false
+for _, pa in plotAngles do
+if angleDiff(a, pa) < math.rad(9) then
+nearPath = true
+end
+end
+if not nearPath then
+local s = 2 + rng:NextNumber() * 3.5
+LowPoly.rock(decor, ringPoint(r, a, s * 0.4), Vector3.new(s, s * 0.9, s), { Color = Color3.fromRGB(150 + rng:NextInteger(-10, 14), 155 + rng:NextInteger(-10, 14), 170), Seed = i, Yaw = rng:NextNumber() * PI, CanCollide = false })
+end
+end
+
+
+local decoTypes = { "Quartz", "Amethyst", "Emerald", "Sapphire" }
+for i = 1, 14 do
+local a = rng:NextNumber() * PI * 2
+local r = Config.FieldRadius + 8 + rng:NextNumber() * 14
+local nearPath = false
+for _, pa in plotAngles do
+if angleDiff(a, pa) < math.rad(11) then
+nearPath = true
+end
+end
+if not nearPath then
+local def = Crystals.ById[decoTypes[rng:NextInteger(1, #decoTypes)]]
+local h = 4 + rng:NextNumber() * 5
+local m = LowPoly.crystal(def, 150, h, rng:NextInteger(1, 99999))
+m.Name = "DecorCrystal"
+m:PivotTo(CFrame.new(ringPoint(r, a, h / 2)) * CFrame.Angles(0, rng:NextNumber() * PI * 2, 0))
+m.Parent = decor
+end
+end
+end
+
+
+
+
+local function buildPlaza(map, folder)
+local plaza = Instance.new("Folder")
+plaza.Name = "Plaza"
+plaza.Parent = folder
+
+
+local stone = Color3.fromRGB(150, 156, 184)
+part(plaza, "StatueBase1", Vector3.new(15, 1.2, 15), CFrame.new(0, 1.0, 0) * CFrame.Angles(0, PI / 4, 0), stone)
+part(plaza, "StatueBase2", Vector3.new(11, 1.2, 11), CFrame.new(0, 2.2, 0), darker(stone, 0.88))
+part(plaza, "StatueBase3", Vector3.new(7, 1.2, 7), CFrame.new(0, 3.4, 0) * CFrame.Angles(0, PI / 4, 0), stone)
+local statueDef = { Color = Color3.fromRGB(150, 110, 255), Neon = true }
+local statue = LowPoly.crystal(statueDef, 3000, 24, 4242)
+statue.Name = "PlazaCrystal"
+statue:PivotTo(CFrame.new(0, 4 + 12, 0))
+statue.Parent = plaza
+
+
+local shop = Instance.new("Model")
+shop.Name = "TrailShop"
+shop.Parent = plaza
+local origin = Vector3.new(0, 0, 21)
+local function S(x, y, z)
+return CFrame.new(origin + Vector3.new(x, y, z))
+end
+local wood = Color3.fromRGB(120, 88, 70)
+local accent = Color3.fromRGB(255, 110, 190)
+part(shop, "Floor", Vector3.new(18, 0.5, 14), S(0, 0.65, 0), Color3.fromRGB(205, 205, 225))
+part(shop, "BackWall", Vector3.new(18, 9, 1), S(0, 5.4, 6.5), wood)
+part(shop, "LeftWall", Vector3.new(1, 9, 14), S(-8.5, 5.4, 0), wood)
+part(shop, "RightWall", Vector3.new(1, 9, 14), S(8.5, 5.4, 0), wood)
+part(shop, "RoofBeam", Vector3.new(19, 1, 15), S(0, 10.4, 0), darker(accent, 0.7))
+LowPoly.roof(shop, origin + Vector3.new(0, 10.9, 0), 10.5, 8.5, 6.5, { Color = accent, Seed = 11 })
+for _, x in { -8.5, 8.5 } do
+part(shop, "FrontPost", Vector3.new(1.4, 9, 1.4), S(x, 5.4, -6.8), darker(accent, 0.85))
+end
+
+part(shop, "Counter", Vector3.new(12, 3, 2.4), S(0, 2.5, 1.5), Color3.fromRGB(86, 72, 110))
+part(shop, "CounterTop", Vector3.new(12.6, 0.4, 3), S(0, 4.2, 1.5), accent)
+
+textSign(shop, "Sign", "TRAIL SHOP", Vector3.new(14, 3, 0.6), S(0, 8.2, -7.2), Color3.fromRGB(34, 30, 60), Color3.fromRGB(255, 220, 120))
+
+local gemColors = { Color3.fromRGB(255, 110, 140), Color3.fromRGB(110, 230, 255), Color3.fromRGB(255, 210, 90) }
+for i, c in gemColors do
+LowPoly.rock(shop, origin + Vector3.new(-4 + (i - 1) * 4, 5.6, 1.5), Vector3.new(1.4, 2, 1.4), { Color = c, Material = Enum.Material.Neon, Seed = i * 9, CanCollide = false })
+end
+local stripes = { Color3.fromRGB(255, 90, 90), Color3.fromRGB(255, 200, 60), Color3.fromRGB(100, 255, 120), Color3.fromRGB(70, 220, 255), Color3.fromRGB(150, 110, 255), Color3.fromRGB(255, 90, 220) }
+for i, c in stripes do
+part(shop, "TrailStripe", Vector3.new(14, 0.7, 0.3), S(0, 3.2 + i * 0.9, 5.9), c, Enum.Material.Neon, { CanCollide = false })
+end
+
+local promptPart = ghost(shop, "ShopPromptPart", Vector3.new(1, 1, 1), S(0, 5.2, -1.4))
+map.ShopPrompt = newPrompt(promptPart, "Shop", "Browse Trails", "Trail Shop", 0, 12)
+end
+
+
+
+
+local function buildStation(plot, def, j, stationCF)
+local model = Instance.new("Model")
+model.Name = "Station_" .. def.Id
+model.Parent = plot.Model
+
+local function SL(x, y, z)
+return stationCF * CFrame.new(x, y, z)
+end
+local tier = def.Color
+local steel = Color3.fromRGB(150, 156, 176)
+local dark = Color3.fromRGB(58, 62, 84)
+
+part(model, "Mat", Vector3.new(10, 0.3, 12), SL(0, 0.15, 3), dark)
+part(model, "TierStrip", Vector3.new(9, 0.12, 0.35), SL(0, 0.34, 8.7), tier, Enum.Material.Neon, { CanCollide = false })
+
+for _, x in { -3.4, 3.4 } do
+part(model, "Post", Vector3.new(0.8, 7, 0.8), SL(x, 3.8, -1.6), darker(tier, 0.55))
+end
+part(model, "TopBeam", Vector3.new(7.6, 0.8, 0.8), SL(0, 7.3, -1.6), darker(tier, 0.55))
+wedge(model, "BackBrace", Vector3.new(0.6, 2.4, 2.4), SL(-3.4, 1.5, -0.2), darker(tier, 0.7), { CanCollide = false })
+wedge(model, "BackBrace", Vector3.new(0.6, 2.4, 2.4), SL(3.4, 1.5, -0.2), darker(tier, 0.7), { CanCollide = false })
+
+
+local lift = Instance.new("Model")
+lift.Name = "Lift"
+lift.Parent = model
+local lifts = {}
+local function addLift(p)
+table.insert(lifts, { Part = p, Base = p.CFrame })
+end
+local plates = def.Plates
+local barLen = 3 + plates * 1.4
+local plateSize = 1.5 + plates * 0.5
+addLift(part(lift, "Bar", Vector3.new(barLen, 0.45, 0.45), SL(0, 4.4, 0.4), steel, SMOOTH, { CanCollide = false }))
+for side = -1, 1, 2 do
+for k = 1, plates do
+local x = side * (barLen / 2 - 0.35 - (k - 1) * 0.62)
+addLift(part(lift, "Plate", Vector3.new(0.5, plateSize - (k - 1) * 0.35, plateSize - (k - 1) * 0.35), SL(x, 4.4, 0.4), if k % 2 == 1 then tier else darker(tier, 0.7), SMOOTH, { CanCollide = false }))
+end
+addLift(part(lift, "Collar", Vector3.new(0.3, 0.9, 0.9), SL(side * (barLen / 2 - 0.2), 4.4, 0.4), steel, SMOOTH, { CanCollide = false }))
+end
+
+
+local anchor = ghost(model, "LabelAnchor", Vector3.new(1, 1, 1), SL(0, 9.6, -1.6))
+local bb = billboard(anchor, Vector2.new(8, 3), Vector3.zero, 90)
+label(bb, def.Name, Color3.fromRGB(245, 248, 255), UDim2.fromScale(1, 0.5), UDim2.fromScale(0, 0))
+local req = if def.MinStrength > 0 then ("Needs " .. tostring(def.MinStrength) .. " kg strength") else "Anyone can use"
+label(bb, req .. "  |  +" .. tostring(def.Gain) .. " per rep", tier, UDim2.fromScale(1, 0.34), UDim2.fromScale(0, 0.55), Enum.Font.GothamBold)
+
+local promptPart = ghost(model, "PromptPart", Vector3.new(1, 1, 1), SL(0, 3.2, 5.5))
+promptPart:SetAttribute("OwnerUserId", 0)
+promptPart:SetAttribute("MinStrength", def.MinStrength)
+local prompt = newPrompt(promptPart, "Gym", "Work Out", def.Name, 0.25, 11)
+prompt:SetAttribute("StationId", def.Id)
+
+table.insert(plot.OwnerParts, promptPart)
+local station = {
+Def = def,
+Index = j,
+Model = model,
+Prompt = prompt,
+PromptPart = promptPart,
+Spot = SL(0, 3.5, 6.2),
+Lift = lifts,
+Plot = plot,
+Animating = false,
+}
+table.insert(plot.Stations, station)
+end
+
+local function buildPlot(map, parent, i)
+local S = Config.PlotSize
+local half = S / 2
+local top = Config.PlotTop
+local color = Config.PlotColors[i]
+local angle = math.rad(30 + (i - 1) * 60)
+local pos = Vector3.new(math.cos(angle) * Config.PlotRingRadius, 0, math.sin(angle) * Config.PlotRingRadius)
+local cf = CFrame.lookAt(pos, Vector3.new(0, 0, 0))
+
+local model = Instance.new("Model")
+model.Name = "Plot" .. i
+model.Parent = parent
+model:SetAttribute("Index", i)
+model:SetAttribute("OwnerUserId", 0)
+model:SetAttribute("Locked", false)
+model:SetAttribute("LockEndsAt", 0)
+model:SetAttribute("LockReadyAt", 0)
+
+local plot = {
+Index = i,
+Model = model,
+CF = cf,
+Color = color,
+Pedestals = {},
+Stations = {},
+OwnerParts = {},
+Owner = nil,
+Locked = false,
+LockEnds = 0,
+LockReadyAt = 0,
+LockToken = 0,
+}
+
+local function L(x, y, z)
+return cf * CFrame.new(x, y, z)
+end
+
+local stone = Color3.fromRGB(214, 216, 232)
+local stoneDark = Color3.fromRGB(96, 102, 130)
+
+
+part(model, "Floor", Vector3.new(S, top, S), L(0, top / 2, 0), stone)
+part(model, "PathStrip", Vector3.new(14, 0.1, S), L(0, top + 0.05, 0), darker(color, 0.55):Lerp(stone, 0.55), SMOOTH, { CanCollide = false })
+part(model, "GymFloor", Vector3.new(S - 4, 0.1, 26), L(0, top + 0.05, 17), Color3.fromRGB(86, 92, 126), SMOOTH, { CanCollide = false })
+for _, edge in { -1, 1 } do
+part(model, "Trim", Vector3.new(S, 0.7, 1.4), L(0, top + 0.35, edge * (half - 0.7)), darker(color, 0.7), SMOOTH, { CanCollide = false })
+end
+
+
+local postColor = darker(color, 0.75)
+local railColor = darker(color, 0.95)
+local function fencePost(x, z)
+part(model, "Post", Vector3.new(1.3, 10, 1.3), L(x, top + 5, z), postColor)
+end
+local function fenceRail(x, z, lenX, lenZ)
+part(model, "Rail", Vector3.new(lenX, 0.8, lenZ), L(x, top + 3.6, z), railColor, SMOOTH, { CanCollide = false })
+part(model, "Rail", Vector3.new(lenX, 0.8, lenZ), L(x, top + 7.6, z), railColor, SMOOTH, { CanCollide = false })
+end
+local gateHalf = Config.GateWidth / 2
+for k = -4, 4 do
+local c = k * 8
+fencePost(c, half)
+fencePost(-half, c)
+fencePost(half, c)
+if math.abs(c) > gateHalf then
+fencePost(c, -half)
+end
+end
+fenceRail(0, half, S, 0.6)
+fenceRail(-half, 0, 0.6, S)
+fenceRail(half, 0, 0.6, S)
+local frontLen = half - gateHalf
+fenceRail(-(gateHalf + frontLen / 2), -half, frontLen, 0.6)
+fenceRail(gateHalf + frontLen / 2, -half, frontLen, 0.6)
+
+local wallProps = { Transparency = 1, CanCollide = true, CanQuery = false, CanTouch = false, CastShadow = false }
+part(model, "WallBack", Vector3.new(S + 2, 16, 1), L(0, top + 8, half), color, SMOOTH, wallProps)
+part(model, "WallLeft", Vector3.new(1, 16, S + 2), L(-half, top + 8, 0), color, SMOOTH, wallProps)
+part(model, "WallRight", Vector3.new(1, 16, S + 2), L(half, top + 8, 0), color, SMOOTH, wallProps)
+part(model, "WallFrontL", Vector3.new(frontLen + 1, 16, 1), L(-(gateHalf + frontLen / 2), top + 8, -half), color, SMOOTH, wallProps)
+part(model, "WallFrontR", Vector3.new(frontLen + 1, 16, 1), L(gateHalf + frontLen / 2, top + 8, -half), color, SMOOTH, wallProps)
+
+
+for _, side in { -1, 1 } do
+part(model, "GatePillar", Vector3.new(3, 14, 3), L(side * (gateHalf + 1.5), top + 7, -half), darker(color, 0.8))
+LowPoly.pyramid(model, L(side * (gateHalf + 1.5), top + 14, -half).Position, 2.4, 3.2, 4, { Color = color, Yaw = PI / 4, Seed = i + side })
+end
+part(model, "GateBeam", Vector3.new(Config.GateWidth + 6, 2, 2.4), L(0, top + 13, -half), darker(color, 0.9))
+local lampA = part(model, "Lamp", Vector3.new(1.4, 1.4, 1.4), L(-(gateHalf + 1.5), top + 17.4, -half), Color3.fromRGB(70, 74, 96), SMOOTH, { CanCollide = false })
+local lampB = part(model, "Lamp", Vector3.new(1.4, 1.4, 1.4), L(gateHalf + 1.5, top + 17.4, -half), Color3.fromRGB(70, 74, 96), SMOOTH, { CanCollide = false })
+plot.Lamps = { lampA, lampB }
+
+
+local signAnchor = ghost(model, "SignAnchor", Vector3.new(1, 1, 1), L(0, top + 21, -half))
+local sign = billboard(signAnchor, Vector2.new(22, 6), Vector3.zero, 420)
+local title = label(sign, "FREE BASE", Color3.fromRGB(255, 255, 255), UDim2.fromScale(1, 0.56), UDim2.fromScale(0, 0))
+title.TextColor3 = color:Lerp(Color3.new(1, 1, 1), 0.4)
+local status = label(sign, "Walk in to claim", Color3.fromRGB(200, 210, 235), UDim2.fromScale(1, 0.34), UDim2.fromScale(0, 0.62), Enum.Font.GothamBold)
+plot.SignLabel = title
+plot.StatusLabel = status
+
+
+local barrier = part(model, "LockBarrier", Vector3.new(Config.GateWidth, 12, 1), L(0, top + 6, -half), Color3.fromRGB(110, 230, 255), Enum.Material.Neon, { Transparency = 1, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false })
+barrier.CollisionGroup = "PlotLock" .. i
+plot.Barrier = barrier
+
+
+local spawn = Instance.new("SpawnLocation")
+spawn.Name = "Spawn"
+spawn.Size = Vector3.new(6, 0.4, 6)
+spawn.CFrame = L(0, top + 0.3, -14)
+spawn.Anchored = true
+spawn.Neutral = true
+spawn.CanCollide = true
+spawn.Duration = 0
+spawn.Color = color
+spawn.Material = Enum.Material.Neon
+spawn.Transparency = 0.45
+spawn.TopSurface = Enum.SurfaceType.Smooth
+spawn.Parent = model
+plot.Spawn = spawn
+plot.GateOut = L(0, top + 3.4, -half - 11) * CFrame.Angles(0, PI, 0)
+
+
+local pedColumns = { -22, -12, 12, 22 }
+local pedRows = { -20, -8 }
+local idx = 0
+for _, z in pedRows do
+for _, x in pedColumns do
+idx += 1
+part(model, "PedestalBase" .. idx, Vector3.new(7, 1.4, 7), L(x, top + 0.7, z), stoneDark)
+local ring = part(model, "PedestalRing" .. idx, Vector3.new(6.7, 0.2, 6.7), L(x, top + 1.5, z), Color3.fromRGB(120, 126, 150), SMOOTH, { CanCollide = false })
+part(model, "PedestalTop" .. idx, Vector3.new(5.6, 0.5, 5.6), L(x, top + 1.85, z), color:Lerp(stone, 0.35))
+local surface = L(x, top + 2.1, z).Position
+local promptPart = ghost(model, "PedestalPrompt" .. idx, Vector3.new(1, 1, 1), L(x, top + 4.4, z))
+promptPart:SetAttribute("OwnerUserId", 0)
+promptPart:SetAttribute("Occupied", false)
+promptPart:SetAttribute("PlotIndex", i)
+promptPart:SetAttribute("SlotIndex", idx)
+promptPart:SetAttribute("CrystalName", "")
+promptPart:SetAttribute("CrystalWeight", 0)
+local prompt = newPrompt(promptPart, "Pedestal", "Place Crystal", "Pedestal " .. idx, 0.35, 11)
+table.insert(plot.OwnerParts, promptPart)
+plot.Pedestals[idx] = {
+Index = idx,
+Plot = plot,
+Surface = surface,
+Ring = ring,
+PromptPart = promptPart,
+Prompt = prompt,
+Crystal = nil,
+}
+end
+end
+
+
+for _, x in { -9, 9 } do
+part(model, "GymPost", Vector3.new(1.4, 12, 1.4), L(x, top + 6, 5.5), darker(color, 0.7))
+end
+textSign(model, "GymSign", "GYM", Vector3.new(20, 3.4, 0.8), L(0, top + 12.6, 5.5), Color3.fromRGB(30, 30, 56), color:Lerp(Color3.new(1, 1, 1), 0.35))
+
+part(model, "SignBar", Vector3.new(6, 0.5, 0.5), L(0, top + 14.8, 5.5), Color3.fromRGB(200, 205, 225), SMOOTH, { CanCollide = false })
+for _, x in { -3, 3 } do
+part(model, "SignPlate", Vector3.new(0.8, 2, 2), L(x, top + 14.8, 5.5), color, SMOOTH, { CanCollide = false })
+end
+
+for j, def in Config.GymStations do
+local x = -22.5 + (j - 1) * 15
+local stationCF = L(x, top, 24) * CFrame.Angles(0, PI, 0)
+buildStation(plot, def, j, stationCF)
+end
+
+
+local consoleCF = L(14, top, -28)
+part(model, "ConsoleBase", Vector3.new(3.4, 3, 2.2), consoleCF * CFrame.new(0, 1.5, 0), stoneDark)
+wedge(model, "ConsoleSlope", Vector3.new(3.4, 1.6, 1.6), consoleCF * CFrame.new(0, 3.8, 0.3) * CFrame.Angles(0, PI, 0), darker(color, 0.8), { CanCollide = false })
+part(model, "ConsoleButton", Vector3.new(1.2, 0.35, 1.2), consoleCF * CFrame.new(0, 4.75, 0.1), Color3.fromRGB(110, 230, 255), Enum.Material.Neon, { CanCollide = false })
+local lockPart = ghost(model, "LockPromptPart", Vector3.new(1, 1, 1), consoleCF * CFrame.new(0, 4.2, 1.4))
+lockPart:SetAttribute("OwnerUserId", 0)
+plot.LockPrompt = newPrompt(lockPart, "Lock", "Lock Base", "Base Console", 0.3, 9)
+table.insert(plot.OwnerParts, lockPart)
+
+
+part(model, "GateApron", Vector3.new(16, 0.3, 12), L(0, 0.15, -half - 6), Color3.fromRGB(196, 178, 140), SMOOTH, { CanCollide = false })
+
+map.Plots[i] = plot
+return plot
+end
+
+
+
+
+function MapBuilder.build()
+local map = { Plots = {} }
+
+
+for i = 1, Config.PlotCount do
+registerGroup("PlotLock" .. i)
+registerGroup("PlotOwner" .. i)
+pcall(function()
+PhysicsService:CollisionGroupSetCollidable("PlotLock" .. i, "PlotOwner" .. i, false)
+end)
+end
+
+setupLighting()
+
+
+for _, child in workspace:GetChildren() do
+if child.Name == "Baseplate" or child:IsA("SpawnLocation") then
+child:Destroy()
+end
+end
+
+local old = workspace:FindFirstChild("Map")
+if old then
+old:Destroy()
+end
+local folder = Instance.new("Folder")
+folder.Name = "Map"
+folder.Parent = workspace
+
+buildIsland(map, folder)
+buildPaths(map, folder)
+
+local plotsFolder = Instance.new("Folder")
+plotsFolder.Name = "Plots"
+plotsFolder.Parent = folder
+for i = 1, Config.PlotCount do
+buildPlot(map, plotsFolder, i)
+end
+
+buildPlaza(map, folder)
+buildDecor(map, folder)
+
+
+local fallback = Instance.new("SpawnLocation")
+fallback.Name = "PlazaSpawn"
+fallback.Size = Vector3.new(8, 0.4, 8)
+fallback.CFrame = CFrame.new(0, 0.6, -26)
+fallback.Anchored = true
+fallback.Neutral = true
+fallback.Duration = 0
+fallback.Transparency = 1
+fallback.CanCollide = false
+fallback.Parent = folder
+map.FallbackSpawn = fallback
+
+local crystals = workspace:FindFirstChild("Crystals")
+if not crystals then
+crystals = Instance.new("Folder")
+crystals.Name = "Crystals"
+crystals.Parent = workspace
+end
+map.CrystalFolder = crystals
+
+return map
+end
+
+return MapBuilder
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">Plots</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+local Util = require(Shared:WaitForChild("Util"))
+
+local Plots = {}
+
+local ctx = nil
+local map = nil
+local byOwner = {}
+local placed = {}
+
+local RED = Color3.fromRGB(255, 70, 70)
+local DIM = Color3.fromRGB(70, 74, 96)
+
+
+
+
+function Plots.ofPlayer(player)
+return byOwner[player]
+end
+
+function Plots.byIndex(i)
+return map.Plots[i]
+end
+
+function Plots.pedestalOf(model)
+return placed[model]
+end
+
+function Plots.findFreePedestal(plot)
+for _, ped in plot.Pedestals do
+if not ped.Crystal then
+return ped
+end
+end
+return nil
+end
+
+function Plots.contains(plot, position)
+local lp = plot.CF:PointToObjectSpace(position)
+local half = Config.PlotSize / 2 + 2
+return math.abs(lp.X) <= half and math.abs(lp.Z) <= half and lp.Y > -6 and lp.Y < 60
+end
+
+
+
+
+local function refreshSign(plot)
+local owner = plot.Owner
+plot.Model:SetAttribute("OwnerUserId", owner and owner.UserId or 0)
+for _, p in plot.OwnerParts do
+p:SetAttribute("OwnerUserId", owner and owner.UserId or 0)
+end
+if owner then
+plot.SignLabel.Text = owner.DisplayName .. "'s Base"
+else
+plot.SignLabel.Text = "FREE BASE"
+plot.StatusLabel.Text = "Empty"
+end
+end
+
+function Plots.recomputeIncome(plot)
+local total = 0
+for _, ped in plot.Pedestals do
+if ped.Crystal then
+total += ped.Crystal:GetAttribute("Income") or 0
+end
+end
+plot.Income = total
+if plot.Owner then
+plot.Owner:SetAttribute("Income", total)
+end
+end
+
+local function applyLockVisual(plot, locked)
+plot.Barrier.CanCollide = locked
+plot.Barrier.Transparency = if locked then 0.55 else 1
+plot.Model:SetAttribute("Locked", locked)
+end
+
+
+
+
+function Plots.setPedestal(ped, model)
+local plot = ped.Plot
+ctx.CrystalSvc.freeze(model)
+ped.Crystal = model
+placed[model] = ped
+
+local H = model:GetAttribute("Height") or 5
+local s = math.min(1, Config.DisplayMaxHeight / H)
+ctx.CrystalSvc.setScale(model, s)
+local yaw = (model:GetAttribute("Yaw") or 0)
+model:PivotTo(CFrame.new(ped.Surface + Vector3.new(0, H * s / 2, 0)) * CFrame.Angles(0, yaw, 0))
+ctx.CrystalSvc.setState(model, "Placed")
+model:SetAttribute("OwnerUserId", plot.Owner and plot.Owner.UserId or 0)
+
+local def = Crystals.ById[model:GetAttribute("TypeId")]
+ped.PromptPart:SetAttribute("Occupied", true)
+ped.PromptPart:SetAttribute("CrystalName", model:GetAttribute("CrystalName"))
+ped.PromptPart:SetAttribute("CrystalWeight", model:GetAttribute("Weight"))
+ped.Ring.Material = Enum.Material.Neon
+ped.Ring.Color = Crystals.RarityColors[def.Rarity]
+Plots.recomputeIncome(plot)
+end
+
+
+function Plots.clearPedestal(ped)
+local model = ped.Crystal
+if model then
+placed[model] = nil
+end
+ped.Crystal = nil
+ped.PromptPart:SetAttribute("Occupied", false)
+ped.PromptPart:SetAttribute("CrystalName", "")
+ped.PromptPart:SetAttribute("CrystalWeight", 0)
+ped.Ring.Material = Enum.Material.SmoothPlastic
+ped.Ring.Color = Color3.fromRGB(120, 126, 150)
+Plots.recomputeIncome(ped.Plot)
+end
+
+local function withinReach(player, part, distance)
+local character = player.Character
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+return hrp ~= nil and (hrp.Position - part.Position).Magnitude <= distance + Config.GrabDistanceSlack
+end
+
+local function onPedestal(player, ped)
+if not withinReach(player, ped.PromptPart, ped.Prompt.MaxActivationDistance) then
+return
+end
+local st = ctx.State.get(player)
+if ped.Crystal then
+if st.Carry then
+ctx.notify(player, "Your hands are full - place or drop your crystal first.", "warn")
+return
+end
+ctx.CrystalSvc.pickUp(player, ped.Crystal)
+elseif st.Carry then
+ctx.CrystalSvc.place(player, ped)
+end
+end
+
+
+
+
+function Plots.assign(player)
+for _, plot in map.Plots do
+if not plot.Owner then
+plot.Owner = player
+byOwner[player] = plot
+player:SetAttribute("PlotIndex", plot.Index)
+player.RespawnLocation = plot.Spawn
+refreshSign(plot)
+return plot
+end
+end
+return nil
+end
+
+function Plots.loadCrystals(player, list)
+local plot = byOwner[player]
+if not plot then
+return
+end
+for _, entry in list do
+local def = Crystals.ById[entry.t]
+local ped = Plots.findFreePedestal(plot)
+if def and ped then
+local model = ctx.CrystalSvc.create(def, entry.w)
+model.Parent = map.CrystalFolder
+Plots.setPedestal(ped, model)
+end
+end
+end
+
+
+function Plots.snapshot(player)
+local list = {}
+local plot = byOwner[player]
+if plot then
+for _, ped in plot.Pedestals do
+if ped.Crystal then
+table.insert(list, { t = ped.Crystal:GetAttribute("TypeId"), w = ped.Crystal:GetAttribute("Weight") })
+end
+end
+end
+local st = ctx.State.get(player)
+if st.Carry and st.CarryOrigin and st.CarryOrigin.OwnerUserId == player.UserId and st.CarryOrigin.PlotIndex then
+table.insert(list, { t = st.Carry:GetAttribute("TypeId"), w = st.Carry:GetAttribute("Weight") })
+end
+return list
+end
+
+function Plots.release(player)
+local plot = byOwner[player]
+if not plot then
+return
+end
+for _, ped in plot.Pedestals do
+if ped.Crystal then
+local model = ped.Crystal
+Plots.clearPedestal(ped)
+model:Destroy()
+end
+end
+plot.LockToken += 1
+plot.Locked = false
+plot.LockReadyAt = 0
+plot.LockEnds = 0
+plot.Model:SetAttribute("LockEndsAt", 0)
+plot.Model:SetAttribute("LockReadyAt", 0)
+applyLockVisual(plot, false)
+plot.Owner = nil
+byOwner[player] = nil
+player:SetAttribute("PlotIndex", nil)
+player:SetAttribute("Income", 0)
+refreshSign(plot)
+end
+
+
+
+
+local function groupFor(player)
+local plot = byOwner[player]
+if plot then
+return "PlotOwner" .. plot.Index
+end
+return "Default"
+end
+
+function Plots.watchCharacter(player, character)
+local group = groupFor(player)
+for _, d in character:GetDescendants() do
+if d:IsA("BasePart") then
+d.CollisionGroup = group
+end
+end
+character.DescendantAdded:Connect(function(d)
+if d:IsA("BasePart") then
+d.CollisionGroup = groupFor(player)
+end
+end)
+end
+
+
+
+
+function Plots.ejectIntruders(plot)
+for _, p in Players:GetPlayers() do
+if p ~= plot.Owner then
+local character = p.Character
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+if hrp and Plots.contains(plot, hrp.Position) then
+character:PivotTo(plot.GateOut)
+ctx.notify(p, "That base just locked - you were moved outside.", "warn")
+end
+end
+end
+end
+
+function Plots.unlock(plot, resetCooldown)
+plot.LockToken += 1
+plot.Locked = false
+applyLockVisual(plot, false)
+if resetCooldown then
+plot.LockReadyAt = 0
+plot.Model:SetAttribute("LockReadyAt", 0)
+end
+if plot.Owner then
+ctx.notify(plot.Owner, "Your base lock has ended.", "info")
+end
+end
+
+function Plots.tryLock(player)
+local plot = byOwner[player]
+if not plot then
+return
+end
+local now = workspace:GetServerTimeNow()
+if plot.Locked then
+ctx.notify(player, "Your base is already locked.", "info")
+return
+end
+if now < plot.LockReadyAt then
+ctx.notify(player, "Lock is recharging: " .. math.ceil(plot.LockReadyAt - now) .. "s", "warn")
+return
+end
+plot.Locked = true
+plot.LockEnds = now + Config.LockDuration
+plot.LockReadyAt = plot.LockEnds + Config.LockCooldown
+plot.LockToken += 1
+local token = plot.LockToken
+plot.Model:SetAttribute("LockEndsAt", plot.LockEnds)
+plot.Model:SetAttribute("LockReadyAt", plot.LockReadyAt)
+applyLockVisual(plot, true)
+Plots.ejectIntruders(plot)
+ctx.notify(player, "Base locked for " .. Config.LockDuration .. " seconds!", "good")
+task.delay(Config.LockDuration, function()
+if plot.LockToken == token and plot.Locked then
+Plots.unlock(plot, false)
+end
+end)
+end
+
+function Plots.alarm(plot)
+plot.AlarmToken = (plot.AlarmToken or 0) + 1
+local token = plot.AlarmToken
+task.spawn(function()
+for i = 1, 12 do
+if plot.AlarmToken ~= token then
+return
+end
+local on = i % 2 == 1
+for _, lamp in plot.Lamps do
+lamp.Color = if on then RED else DIM
+lamp.Material = if on then Enum.Material.Neon else Enum.Material.SmoothPlastic
+end
+task.wait(0.4)
+end
+for _, lamp in plot.Lamps do
+lamp.Color = DIM
+lamp.Material = Enum.Material.SmoothPlastic
+end
+end)
+end
+
+
+
+
+function Plots.init(c, m)
+ctx = c
+map = m
+
+for _, plot in map.Plots do
+plot.Income = 0
+plot.LockPrompt.Triggered:Connect(function(player)
+if plot.Owner == player and withinReach(player, plot.LockPrompt.Parent, plot.LockPrompt.MaxActivationDistance) then
+Plots.tryLock(player)
+end
+end)
+for _, ped in plot.Pedestals do
+ped.Prompt.Triggered:Connect(function(player)
+onPedestal(player, ped)
+end)
+end
+end
+
+ctx.Remotes.ToggleLock.OnServerEvent:Connect(function(player)
+Plots.tryLock(player)
+end)
+
+task.spawn(function()
+while true do
+task.wait(1)
+local now = workspace:GetServerTimeNow()
+for _, plot in map.Plots do
+local owner = plot.Owner
+if owner then
+if plot.Income and plot.Income > 0 then
+ctx.Data.addGems(owner, plot.Income)
+end
+if plot.Locked then
+plot.StatusLabel.Text = "LOCKED  " .. math.max(0, math.ceil(plot.LockEnds - now)) .. "s"
+plot.StatusLabel.TextColor3 = Color3.fromRGB(110, 230, 255)
+else
+plot.StatusLabel.Text = "Unlocked  |  " .. Util.abbrev(plot.Income or 0) .. " gems/s"
+plot.StatusLabel.TextColor3 = Color3.fromRGB(200, 210, 235)
+end
+end
+end
+end
+end)
+end
+
+return Plots
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">State</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
+local State = {}
+local states = {}
+
+function State.get(player)
+local s = states[player]
+if not s then
+s = {
+Carry = nil,
+CarryOrigin = nil,
+Workout = nil,
+SpeedMult = 1,
+God = false,
+}
+states[player] = s
+end
+return s
+end
+
+function State.remove(player)
+states[player] = nil
+end
+
+
+function State.refreshSpeed(player)
+local character = player.Character
+local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+if not humanoid then
+return
+end
+local st = State.get(player)
+humanoid.UseJumpPower = true
+if st.Workout then
+humanoid.WalkSpeed = 0
+humanoid.JumpPower = 0
+return
+end
+local speed = Config.BaseWalkSpeed * st.SpeedMult
+if st.Carry and st.Carry.Parent then
+local weight = st.Carry:GetAttribute("Weight") or 1
+local strength = math.max(player:GetAttribute("Strength") or 1, 1)
+local factor = math.clamp(1 - Config.CarrySlowdown * (weight / strength), Config.MinCarrySpeedFactor, 1)
+speed *= factor
+end
+humanoid.WalkSpeed = speed
+humanoid.JumpPower = Config.BaseJumpPower
+end
+
+return State
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">TrailSvc</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Trails = require(Shared:WaitForChild("Trails"))
+
+local TrailSvc = {}
+
+local ctx = nil
+
+function TrailSvc.apply(player)
+local character = player.Character
+local hrp = character and character:FindFirstChild("HumanoidRootPart")
+if not hrp then
+return
+end
+for _, name in { "CrystalTrail", "TrailA", "TrailB" } do
+local old = hrp:FindFirstChild(name)
+if old then
+old:Destroy()
+end
+end
+local profile = ctx.Data.get(player)
+local def = profile and Trails.ById[profile.Equipped]
+if not def then
+return
+end
+
+local a0 = Instance.new("Attachment")
+a0.Name = "TrailA"
+a0.Position = Vector3.new(0, 1.2, 0)
+a0.Parent = hrp
+local a1 = Instance.new("Attachment")
+a1.Name = "TrailB"
+a1.Position = Vector3.new(0, -2.4, 0)
+a1.Parent = hrp
+
+local trail = Instance.new("Trail")
+trail.Name = "CrystalTrail"
+trail.Attachment0 = a0
+trail.Attachment1 = a1
+trail.Color = Trails.sequence(def)
+trail.Lifetime = def.Lifetime
+trail.LightEmission = def.Glow
+trail.MinLength = 0.05
+trail.FaceCamera = true
+trail.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1) })
+trail.WidthScale = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0.25) })
+trail.Parent = hrp
+end
+
+local function handle(player, action, id)
+if type(action) ~= "string" then
+return false, "Bad request"
+end
+if action == "Unequip" then
+ctx.Data.setEquipped(player, "")
+TrailSvc.apply(player)
+return true, "Trail removed"
+end
+if type(id) ~= "string" then
+return false, "Bad request"
+end
+local def = Trails.ById[id]
+if not def then
+return false, "Unknown trail"
+end
+local owned = ctx.Data.ownsTrail(player, id)
+
+if action == "Buy" then
+if owned then
+return false, "You already own " .. def.Name
+end
+local profile = ctx.Data.get(player)
+if profile.Gems < def.Price then
+return false, "Not enough gems for " .. def.Name
+end
+ctx.Data.addGems(player, -def.Price)
+ctx.Data.giveTrail(player, id)
+ctx.Data.setEquipped(player, id)
+TrailSvc.apply(player)
+return true, "Bought and equipped " .. def.Name .. "!"
+elseif action == "Equip" then
+if not owned then
+return false, "You don't own " .. def.Name .. " yet"
+end
+ctx.Data.setEquipped(player, id)
+TrailSvc.apply(player)
+return true, "Equipped " .. def.Name
+end
+return false, "Bad request"
+end
+
+function TrailSvc.init(c)
+ctx = c
+ctx.Remotes.ShopAction.OnServerInvoke = function(player, action, id)
+local ok, success, message = pcall(handle, player, action, id)
+if not ok then
+warn("[Steal a Crystal] ShopAction error: " .. tostring(success))
+return false, "Something went wrong"
+end
+return success, message
+end
+end
+
+return TrailSvc
+]]></ProtectedString></Properties></Item></Item></Item>
+<Item class="ServerStorage" referent="RBX26"><Properties><string name="Name">ServerStorage</string></Properties><Item class="ScreenGui" referent="RBX25"><Properties><string name="Name">AdminPanel</string><bool name="ResetOnSpawn">false</bool><int name="DisplayOrder">50</int></Properties><Item class="LocalScript" referent="RBX24"><Properties><string name="Name">AdminPanelClient</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local UI = require(Shared:WaitForChild("UI"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+local Util = require(Shared:WaitForChild("Util"))
+local Theme = UI.Theme
+
+local player = Players.LocalPlayer
+local gui = script.Parent
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 50
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+UI.autoScale(gui)
+
+
+
+
+local function call(action, args)
+local ok, result = pcall(function()
+return Remotes.Admin:InvokeServer(action, args or {})
+end)
+if not ok or type(result) ~= "table" then
+return { ok = false, msg = "Request failed" }
+end
+return result
+end
+
+
+
+
+local selectedId = player.UserId
+local selectedName = player.DisplayName
+local lastPlayers = {}
+local statusLabel
+local targetLabel
+local listFrame
+local render
+
+local window = UI.panel(gui, {
+Name = "Window", Size = UDim2.fromOffset(650, 480), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
+Color = Theme.Bg, Border = Theme.Gold, Cham = 14, Stroke = 4, Z = 40,
+})
+window.Root.Visible = false
+local content = window.Content
+
+UI.text(content, {
+Text = "ADMIN PANEL", Size = UDim2.fromOffset(300, 36), Position = UDim2.fromOffset(20, 12),
+TextSize = 26, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Gold, Z = 42,
+})
+targetLabel = UI.text(content, {
+Text = "Target: you", Size = UDim2.fromOffset(380, 20), Position = UDim2.fromOffset(20, 48),
+TextSize = 14, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Muted, Z = 42,
+})
+UI.button(content, {
+Text = "X", Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -48, 0, 12),
+Color = Theme.Bg3, Border = Theme.Red, TextSize = 18, Z = 42,
+OnClick = function()
+window.Root.Visible = false
+end,
+})
+
+statusLabel = UI.text(content, {
+Text = "Pick a player on the left, then use the tabs.", Size = UDim2.new(1, -40, 0, 28), Position = UDim2.new(0, 20, 1, -40),
+TextSize = 14, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Muted, Z = 42,
+})
+
+local function setStatus(result)
+statusLabel.Text = tostring(result.msg or "")
+statusLabel.TextColor3 = if result.ok then Theme.Green else Theme.Red
+end
+
+
+
+
+listFrame = Instance.new("ScrollingFrame")
+listFrame.Name = "Players"
+listFrame.BackgroundTransparency = 1
+listFrame.BorderSizePixel = 0
+listFrame.Size = UDim2.fromOffset(190, 330)
+listFrame.Position = UDim2.fromOffset(20, 84)
+listFrame.ScrollBarThickness = 5
+listFrame.ScrollBarImageColor3 = Theme.Gold
+listFrame.CanvasSize = UDim2.new()
+listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+listFrame.ZIndex = 42
+listFrame.Parent = content
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 6)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = listFrame
+
+function render(players)
+lastPlayers = players
+for _, child in listFrame:GetChildren() do
+if child:IsA("GuiObject") then
+child:Destroy()
+end
+end
+local found = false
+for i, p in players do
+if p.UserId == selectedId then
+found = true
+selectedName = p.DisplayName
+end
+UI.button(listFrame, {
+Text = p.DisplayName .. "  -  " .. Util.abbrev(p.Gems),
+Size = UDim2.new(1, -8, 0, 34),
+Color = Theme.Bg2,
+Border = if p.UserId == selectedId then Theme.Gold else Theme.Bg3,
+TextSize = 13, Z = 42, LayoutOrder = i,
+OnClick = function()
+selectedId = p.UserId
+selectedName = p.DisplayName
+targetLabel.Text = "Target: " .. selectedName
+render(lastPlayers)
+end,
+})
+end
+if not found then
+selectedId = player.UserId
+selectedName = player.DisplayName
+end
+targetLabel.Text = "Target: " .. selectedName .. (if selectedId == player.UserId then " (you)" else "")
+end
+
+local function refreshPlayers()
+local r = call("ListPlayers")
+if r.ok and type(r.players) == "table" then
+render(r.players)
+else
+setStatus(r)
+end
+end
+
+local function run(action, args)
+args = args or {}
+args.Target = selectedId
+local r = call(action, args)
+setStatus(r)
+task.spawn(refreshPlayers)
+return r
+end
+
+
+
+
+local tabFrames = {}
+local tabButtons = {}
+
+local function newTab(name, order)
+local f = Instance.new("Frame")
+f.Name = name
+f.BackgroundTransparency = 1
+f.Size = UDim2.fromOffset(410, 300)
+f.Position = UDim2.fromOffset(226, 126)
+f.Visible = false
+f.ZIndex = 42
+f.Parent = content
+tabFrames[name] = f
+
+local b = UI.button(content, {
+Text = name, Size = UDim2.fromOffset(130, 34), Position = UDim2.fromOffset(226 + (order - 1) * 140, 84),
+Color = Theme.Bg2, Border = Theme.Bg3, TextSize = 14, Z = 42,
+OnClick = function()
+for n, frame in tabFrames do
+frame.Visible = n == name
+tabButtons[n].Panel.SetBorder(if n == name then Theme.Gold else Theme.Bg3)
+end
+end,
+})
+tabButtons[name] = b
+return f
+end
+
+local function grid(frame)
+local g = Instance.new("UIGridLayout")
+g.CellSize = UDim2.fromOffset(128, 36)
+g.CellPadding = UDim2.fromOffset(13, 8)
+g.SortOrder = Enum.SortOrder.LayoutOrder
+g.Parent = frame
+end
+
+local function textField(parent, default, placeholder)
+local panel = UI.panel(parent, {
+Size = UDim2.fromOffset(128, 36), Color = Color3.fromRGB(18, 20, 38), Border = Theme.Bg3, Cham = 6, Stroke = 2, Shine = false, Z = 42,
+})
+local box = Instance.new("TextBox")
+box.BackgroundTransparency = 1
+box.Size = UDim2.new(1, -14, 1, 0)
+box.Position = UDim2.fromOffset(7, 0)
+box.Text = default
+box.PlaceholderText = placeholder
+box.TextColor3 = Theme.Text
+box.PlaceholderColor3 = Theme.Muted
+box.Font = UI.Font
+box.TextSize = 15
+box.ClearTextOnFocus = false
+box.ZIndex = 48
+box.Parent = panel.Content
+return box
+end
+
+local function actionButton(parent, text, border, fn)
+return UI.button(parent, { Text = text, Color = Theme.Bg2, Border = border or Theme.Border, TextSize = 14, Z = 42, OnClick = fn })
+end
+
+
+local playerTab = newTab("PLAYER", 1)
+grid(playerTab)
+local amount = textField(playerTab, "1000", "amount")
+actionButton(playerTab, "Give Gems", Theme.Gold, function()
+run("GiveGems", { Amount = tonumber(amount.Text) })
+end)
+actionButton(playerTab, "Set Gems", Theme.Gold, function()
+run("SetGems", { Amount = tonumber(amount.Text) })
+end)
+actionButton(playerTab, "Add Strength", Theme.Accent, function()
+run("AddStrength", { Amount = tonumber(amount.Text) })
+end)
+actionButton(playerTab, "Set Strength", Theme.Accent, function()
+run("SetStrength", { Amount = tonumber(amount.Text) })
+end)
+actionButton(playerTab, "All Trails", Theme.Border, function()
+run("GiveAllTrails")
+end)
+actionButton(playerTab, "Bring", Theme.Green, function()
+run("Bring")
+end)
+actionButton(playerTab, "Go To", Theme.Green, function()
+run("Goto")
+end)
+actionButton(playerTab, "Heal", Theme.Green, function()
+run("Heal")
+end)
+actionButton(playerTab, "Unlock Base", Theme.Border, function()
+run("UnlockPlot")
+end)
+actionButton(playerTab, "Drop Crystal", Theme.Border, function()
+run("ClearCarry")
+end)
+local speed = textField(playerTab, "2", "speed x")
+actionButton(playerTab, "Set Speed", Theme.Green, function()
+run("SetSpeed", { Mult = tonumber(speed.Text) })
+end)
+actionButton(playerTab, "God ON", Theme.Green, function()
+run("SetGod", { On = true })
+end)
+actionButton(playerTab, "God OFF", Theme.Muted, function()
+run("SetGod", { On = false })
+end)
+actionButton(playerTab, "Kick", Theme.Red, function()
+run("Kick", { Reason = "Removed by an admin" })
+end)
+actionButton(playerTab, "Reset Data", Theme.Red, function()
+run("ResetData")
+end)
+
+
+local crystalTab = newTab("CRYSTALS", 2)
+grid(crystalTab)
+local typeIndex = 1
+local weightBox
+local infoLabel
+local typeButton
+
+local function refreshCrystalInfo()
+local def = Crystals.Types[typeIndex]
+typeButton.SetText(def.Name)
+typeButton.Panel.SetBorder(Crystals.RarityColors[def.Rarity])
+local w = math.clamp(math.floor(tonumber(weightBox.Text) or 1), 1, 100000)
+infoLabel.Text = "~" .. Util.abbrev(Crystals.income(def, w)) .. " gems/s"
+end
+
+typeButton = actionButton(crystalTab, "Quartz", Theme.Border, function()
+typeIndex = typeIndex % #Crystals.Types + 1
+refreshCrystalInfo()
+end)
+weightBox = textField(crystalTab, "100", "weight kg")
+infoLabel = UI.text(crystalTab, { Text = "", TextSize = 14, TextColor = Theme.Green, Z = 42 })
+weightBox:GetPropertyChangedSignal("Text"):Connect(refreshCrystalInfo)
+actionButton(crystalTab, "Give to Target", Theme.Gold, function()
+run("GiveCrystal", { TypeId = Crystals.Types[typeIndex].Id, Weight = tonumber(weightBox.Text) })
+end)
+actionButton(crystalTab, "Spawn by Me", Theme.Gold, function()
+run("SpawnCrystal", { TypeId = Crystals.Types[typeIndex].Id, Weight = tonumber(weightBox.Text) })
+end)
+actionButton(crystalTab, "Clear Field", Theme.Red, function()
+run("ClearField")
+end)
+local rainCount = textField(crystalTab, "10", "how many")
+actionButton(crystalTab, "Crystal Rain", Theme.Accent, function()
+run("CrystalRain", { Count = tonumber(rainCount.Text) })
+end)
+refreshCrystalInfo()
+
+
+local serverTab = newTab("SERVER", 3)
+local announcePanel = UI.panel(serverTab, {
+Size = UDim2.fromOffset(410, 44), Position = UDim2.fromOffset(0, 0), Color = Color3.fromRGB(18, 20, 38), Border = Theme.Bg3,
+Cham = 6, Stroke = 2, Shine = false, Z = 42,
+})
+local announceBox = Instance.new("TextBox")
+announceBox.BackgroundTransparency = 1
+announceBox.Size = UDim2.new(1, -20, 1, 0)
+announceBox.Position = UDim2.fromOffset(10, 0)
+announceBox.Text = ""
+announceBox.PlaceholderText = "Announcement shown to everyone..."
+announceBox.TextColor3 = Theme.Text
+announceBox.PlaceholderColor3 = Theme.Muted
+announceBox.Font = UI.Font
+announceBox.TextSize = 15
+announceBox.TextXAlignment = Enum.TextXAlignment.Left
+announceBox.ClearTextOnFocus = false
+announceBox.ZIndex = 48
+announceBox.Parent = announcePanel.Content
+UI.button(serverTab, {
+Text = "Send Announcement", Size = UDim2.fromOffset(410, 40), Position = UDim2.fromOffset(0, 54),
+Color = Theme.Bg2, Border = Theme.Gold, TextSize = 15, Z = 42,
+OnClick = function()
+run("Announce", { Text = announceBox.Text })
+end,
+})
+UI.button(serverTab, {
+Text = "Refresh Player List", Size = UDim2.fromOffset(410, 40), Position = UDim2.fromOffset(0, 104),
+Color = Theme.Bg2, Border = Theme.Border, TextSize = 15, Z = 42,
+OnClick = function()
+refreshPlayers()
+setStatus({ ok = true, msg = "Player list refreshed" })
+end,
+})
+
+playerTab.Visible = true
+tabButtons.PLAYER.Panel.SetBorder(Theme.Gold)
+
+
+
+
+local toggle = UI.button(gui, {
+Text = "ADMIN [P]", Size = UDim2.fromOffset(110, 34), Position = UDim2.new(1, -12, 0.5, 0), AnchorPoint = Vector2.new(1, 0.5),
+Color = Theme.Bg, Border = Theme.Gold, TextSize = 14, Z = 39,
+})
+
+local function setOpen(open)
+window.Root.Visible = open
+if open then
+refreshPlayers()
+end
+end
+
+toggle.Button.Activated:Connect(function()
+setOpen(not window.Root.Visible)
+end)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+if processed then
+return
+end
+if input.KeyCode == Enum.KeyCode.P then
+setOpen(not window.Root.Visible)
+end
+end)
+
+
+task.spawn(function()
+while gui.Parent do
+task.wait(4)
+if window.Root.Visible then
+refreshPlayers()
+end
+end
+end)
+]]></ProtectedString></Properties></Item></Item></Item>
+<Item class="StarterGui" referent="RBX27"><Properties><string name="Name">StarterGui</string></Properties></Item>
+<Item class="StarterPack" referent="RBX28"><Properties><string name="Name">StarterPack</string></Properties></Item>
+<Item class="StarterPlayer" referent="RBX38"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX36"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="Folder" referent="RBX34"><Properties><string name="Name">Client</string></Properties><Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local UI = require(Shared:WaitForChild("UI"))
+local Util = require(Shared:WaitForChild("Util"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+local Theme = UI.Theme
+
+local HUD = {}
+
+function HUD.init(ctx)
+local player = ctx.player
+local gui = ctx.gui
+
+
+
+
+local gems = UI.panel(gui, { Name = "Gems", Size = UDim2.fromOffset(236, 64), Position = UDim2.fromOffset(16, 16), Border = Theme.Gold })
+UI.gemIcon(gems.Content, 38, UDim2.fromOffset(12, 13), Theme.Border)
+local gemsValue = UI.text(gems.Content, {
+Text = "0", Size = UDim2.new(1, -66, 0, 30), Position = UDim2.fromOffset(58, 6),
+TextSize = 26, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Gold,
+})
+local gemsRate = UI.text(gems.Content, {
+Text = "+0 / sec", Size = UDim2.new(1, -66, 0, 18), Position = UDim2.fromOffset(58, 38),
+TextSize = 14, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Green,
+})
+
+local strength = UI.panel(gui, { Name = "Strength", Size = UDim2.fromOffset(236, 56), Position = UDim2.fromOffset(16, 88), Border = Theme.Accent })
+UI.dumbbellIcon(strength.Content, 38, UDim2.fromOffset(12, 9), Theme.Accent)
+local strengthValue = UI.text(strength.Content, {
+Text = "5 kg", Size = UDim2.new(1, -66, 0, 28), Position = UDim2.fromOffset(58, 4),
+TextSize = 24, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Left,
+})
+UI.text(strength.Content, {
+Text = "STRENGTH (max lift)", Size = UDim2.new(1, -66, 0, 16), Position = UDim2.fromOffset(58, 32),
+TextSize = 12, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Muted,
+})
+
+local function refreshStats()
+gemsValue.Text = Util.abbrev(player:GetAttribute("Gems") or 0)
+strengthValue.Text = Util.comma(player:GetAttribute("Strength") or 0) .. " kg"
+gemsRate.Text = "+" .. Util.abbrev(player:GetAttribute("Income") or 0) .. " / sec"
+end
+for _, name in { "Gems", "Strength", "Income" } do
+player:GetAttributeChangedSignal(name):Connect(refreshStats)
+end
+refreshStats()
+
+
+
+
+UI.button(gui, {
+Text = "TRAIL SHOP", Size = UDim2.fromOffset(236, 44), Position = UDim2.fromOffset(16, 156),
+Color = Theme.Bg2, Border = Theme.Accent, TextSize = 17,
+OnClick = function()
+ctx.Shop.toggle()
+end,
+})
+local lockButton = UI.button(gui, {
+Text = "LOCK BASE  [L]", Size = UDim2.fromOffset(236, 44), Position = UDim2.fromOffset(16, 208),
+Color = Theme.Bg2, Border = Theme.Border, TextSize = 17,
+OnClick = function()
+ctx.Remotes.ToggleLock:FireServer()
+end,
+})
+
+
+
+
+local carry = UI.panel(gui, {
+Name = "Carry", Size = UDim2.fromOffset(420, 62), Position = UDim2.new(0.5, 0, 1, -24), AnchorPoint = Vector2.new(0.5, 1),
+Border = Theme.Border,
+})
+carry.Root.Visible = false
+local carryTitle = UI.text(carry.Content, {
+Text = "", Size = UDim2.new(1, -140, 0, 26), Position = UDim2.fromOffset(16, 6),
+TextSize = 18, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Left,
+})
+local carryDetail = UI.text(carry.Content, {
+Text = "", Size = UDim2.new(1, -140, 0, 20), Position = UDim2.fromOffset(16, 32),
+TextSize = 14, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Muted,
+})
+UI.button(carry.Content, {
+Text = "DROP [G]", Size = UDim2.fromOffset(108, 40), Position = UDim2.new(1, -120, 0.5, -20),
+Color = Theme.Bg3, Border = Theme.Red, TextSize = 15,
+OnClick = function()
+ctx.Remotes.DropCrystal:FireServer()
+end,
+})
+
+local function refreshCarry()
+local carrying = player:GetAttribute("Carrying") == true
+carry.Root.Visible = carrying
+if carrying then
+local rarity = player:GetAttribute("CarryRarity") or "Common"
+carryTitle.Text = tostring(player:GetAttribute("CarryName") or "Crystal")
+carryTitle.TextColor3 = Crystals.RarityColors[rarity] or Theme.Text
+carryDetail.Text = Util.formatWeight(player:GetAttribute("CarryWeight") or 0) .. "  -  take it to a pedestal in your base"
+end
+end
+for _, name in { "Carrying", "CarryName", "CarryWeight", "CarryRarity" } do
+player:GetAttributeChangedSignal(name):Connect(refreshCarry)
+end
+refreshCarry()
+
+
+
+
+local function plotModel()
+local index = player:GetAttribute("PlotIndex")
+local map = workspace:FindFirstChild("Map")
+local plots = map and map:FindFirstChild("Plots")
+return index and plots and plots:FindFirstChild("Plot" .. index)
+end
+
+local lastText = ""
+local lastMode = ""
+local acc = 0
+RunService.Heartbeat:Connect(function(dt)
+acc += dt
+if acc < 0.2 then
+return
+end
+acc = 0
+local plot = plotModel()
+if not plot then
+lockButton.Root.Visible = false
+return
+end
+lockButton.Root.Visible = true
+local now = workspace:GetServerTimeNow()
+local locked = plot:GetAttribute("Locked") == true
+local readyAt = plot:GetAttribute("LockReadyAt") or 0
+local endsAt = plot:GetAttribute("LockEndsAt") or 0
+local text, mode
+if locked then
+text = "LOCKED  " .. math.max(0, math.ceil(endsAt - now)) .. "s"
+mode = "locked"
+elseif now < readyAt then
+text = "RECHARGING  " .. math.ceil(readyAt - now) .. "s"
+mode = "cooldown"
+else
+text = "LOCK BASE  [L]"
+mode = "ready"
+end
+if text ~= lastText then
+lastText = text
+lockButton.SetText(text)
+end
+if mode ~= lastMode then
+lastMode = mode
+if mode == "ready" then
+lockButton.SetEnabled(true)
+lockButton.SetColors(Theme.Bg2, nil, Theme.Border)
+elseif mode == "locked" then
+lockButton.SetColors(Color3.fromRGB(30, 70, 90), nil, Theme.Green)
+lockButton.SetEnabled(false)
+else
+lockButton.SetEnabled(false)
+end
+end
+end)
+
+
+
+
+UserInputService.InputBegan:Connect(function(input, processed)
+if processed then
+return
+end
+if input.KeyCode == Enum.KeyCode.G then
+ctx.Remotes.DropCrystal:FireServer()
+elseif input.KeyCode == Enum.KeyCode.L then
+ctx.Remotes.ToggleLock:FireServer()
+end
+end)
+end
+
+return HUD
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">Prompts</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+
+
+
+local CollectionService = game:GetService("CollectionService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local UI = require(Shared:WaitForChild("UI"))
+local Util = require(Shared:WaitForChild("Util"))
+local Crystals = require(Shared:WaitForChild("Crystals"))
+local Theme = UI.Theme
+
+local Prompts = {}
+
+local ctx = nil
+local player = nil
+
+
+
+
+local function describe(prompt)
+local kind = prompt:GetAttribute("Kind")
+local part = prompt.Parent
+local myId = player.UserId
+local carrying = player:GetAttribute("Carrying") == true
+local strength = player:GetAttribute("Strength") or 0
+
+local info = {
+Visible = true,
+Action = prompt.ActionText,
+Object = prompt.ObjectText,
+Sub = "",
+Color = Theme.Border,
+}
+if not part then
+info.Visible = false
+return info
+end
+
+if kind == "Crystal" then
+local model = part.Parent
+local weight = model and model:GetAttribute("Weight") or 0
+info.Object = model and model:GetAttribute("CrystalName") or "Crystal"
+info.Color = Crystals.RarityColors[model and model:GetAttribute("Rarity") or ""] or Theme.Border
+if carrying then
+info.Sub = "Your hands are full"
+elseif weight > strength then
+info.Sub = "TOO HEAVY - need " .. Util.comma(weight) .. " kg"
+info.Color = Theme.Red
+else
+info.Sub = Util.formatWeight(weight)
+end
+
+elseif kind == "Pedestal" then
+local ownerId = part:GetAttribute("OwnerUserId") or 0
+local occupied = part:GetAttribute("Occupied") == true
+local mine = ownerId == myId
+if ctx.working or ownerId == 0 then
+info.Visible = false
+elseif occupied then
+local cname = part:GetAttribute("CrystalName") or "Crystal"
+local cweight = part:GetAttribute("CrystalWeight") or 0
+if carrying then
+info.Visible = false
+elseif mine then
+info.Action = "Pick Up"
+info.Object = cname
+info.Sub = Util.formatWeight(cweight)
+info.Color = Theme.Green
+else
+info.Action = "STEAL"
+info.Object = cname
+info.Color = Theme.Red
+local plotModel = part.Parent
+if plotModel and plotModel:GetAttribute("Locked") == true then
+info.Sub = "BASE LOCKED"
+info.Color = Theme.Muted
+elseif cweight > strength then
+info.Sub = "TOO HEAVY - need " .. Util.comma(cweight) .. " kg"
+else
+info.Sub = Util.formatWeight(cweight)
+end
+end
+elseif mine and carrying then
+info.Action = "Place Crystal"
+info.Object = player:GetAttribute("CarryName") or "Crystal"
+info.Sub = Util.formatWeight(player:GetAttribute("CarryWeight") or 0)
+info.Color = Theme.Green
+else
+info.Visible = false
+end
+
+elseif kind == "Gym" then
+local ownerId = part:GetAttribute("OwnerUserId") or 0
+local need = part:GetAttribute("MinStrength") or 0
+if ctx.working or ownerId ~= myId then
+info.Visible = false
+elseif strength < need then
+info.Sub = "Need " .. Util.comma(need) .. " kg strength"
+info.Color = Theme.Red
+else
+info.Sub = "Hold to start"
+info.Color = Theme.Accent
+end
+
+elseif kind == "Lock" then
+local ownerId = part:GetAttribute("OwnerUserId") or 0
+info.Visible = ownerId == myId and not ctx.working
+info.Sub = "Keeps thieves out for a while"
+
+elseif kind == "Shop" then
+info.Sub = "Spend gems on trails"
+info.Color = Theme.Accent
+end
+
+return info
+end
+
+
+
+
+local function startFilter()
+local acc = 0
+RunService.Heartbeat:Connect(function(dt)
+acc += dt
+if acc < 0.16 then
+return
+end
+acc = 0
+for _, prompt in CollectionService:GetTagged("DynPrompt") do
+if prompt:IsA("ProximityPrompt") and prompt:GetAttribute("Kind") ~= "Crystal" then
+local want = describe(prompt).Visible
+if prompt.Enabled ~= want then
+prompt.Enabled = want
+end
+end
+end
+end)
+end
+
+
+
+
+local function keyText(prompt, inputType)
+if inputType == Enum.ProximityPromptInputType.Touch then
+return "TAP"
+elseif inputType == Enum.ProximityPromptInputType.Gamepad then
+return (string.gsub(prompt.GamepadKeyCode.Name, "^Button", ""))
+end
+local ok, text = pcall(function()
+return UserInputService:GetStringForKeyCode(prompt.KeyboardKeyCode)
+end)
+if ok and text and text ~= "" then
+return text
+end
+return prompt.KeyboardKeyCode.Name
+end
+
+local function createPrompt(prompt, inputType, screen)
+local info = describe(prompt)
+
+local billboard = Instance.new("BillboardGui")
+billboard.Name = "PromptUI"
+billboard.Size = UDim2.fromOffset(270, 86)
+billboard.StudsOffset = Vector3.new(0, 1.4, 0)
+billboard.AlwaysOnTop = true
+billboard.LightInfluence = 0
+billboard.ResetOnSpawn = false
+billboard.Active = true
+billboard.Adornee = prompt.Parent
+billboard.Parent = screen
+
+local group = Instance.new("CanvasGroup")
+group.BackgroundTransparency = 1
+group.BorderSizePixel = 0
+group.Size = UDim2.fromScale(1, 1)
+group.GroupTransparency = 1
+group.Parent = billboard
+
+local panel = UI.panel(group, { Size = UDim2.fromScale(1, 1), Color = Theme.Bg, Border = info.Color, Cham = 10, Stroke = 3 })
+local content = panel.Content
+
+
+local badge = Instance.new("Frame")
+badge.BorderSizePixel = 0
+badge.AnchorPoint = Vector2.new(0.5, 0.5)
+badge.Position = UDim2.fromOffset(46, 40)
+badge.Size = UDim2.fromOffset(44, 44)
+badge.Rotation = 45
+badge.BackgroundColor3 = Theme.Bg3
+badge.ZIndex = 6
+badge.Parent = content
+local badgeText = UI.text(content, {
+Text = keyText(prompt, inputType), Size = UDim2.fromOffset(60, 30), Position = UDim2.fromOffset(16, 25),
+TextSize = 20, Font = UI.FontBlack, Z = 8,
+})
+
+local action = UI.text(content, {
+Text = info.Action, Size = UDim2.new(1, -100, 0, 26), Position = UDim2.fromOffset(86, 8),
+TextSize = 21, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Left, TextColor = info.Color, Z = 8,
+})
+local object = UI.text(content, {
+Text = info.Object, Size = UDim2.new(1, -100, 0, 20), Position = UDim2.fromOffset(86, 34),
+TextSize = 15, XAlign = Enum.TextXAlignment.Left, Z = 8,
+})
+local sub = UI.text(content, {
+Text = info.Sub, Size = UDim2.new(1, -100, 0, 16), Position = UDim2.fromOffset(86, 54),
+TextSize = 12, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Muted, Z = 8,
+})
+for _, l in { action, object, sub } do
+l.TextTruncate = Enum.TextTruncate.AtEnd
+end
+
+
+local track = Instance.new("Frame")
+track.BorderSizePixel = 0
+track.BackgroundColor3 = Color3.fromRGB(16, 18, 34)
+track.Size = UDim2.new(1, -28, 0, 5)
+track.Position = UDim2.new(0, 14, 1, -11)
+track.ZIndex = 7
+track.Visible = prompt.HoldDuration > 0
+track.Parent = content
+local fill = Instance.new("Frame")
+fill.BorderSizePixel = 0
+fill.BackgroundColor3 = info.Color
+fill.Size = UDim2.fromScale(0, 1)
+fill.ZIndex = 8
+fill.Parent = track
+
+local connections = {}
+local holding = false
+local holdTween = nil
+
+local function startHold()
+if holding or prompt.HoldDuration <= 0 then
+return
+end
+holding = true
+fill.Size = UDim2.fromScale(0, 1)
+holdTween = UI.tween(fill, prompt.HoldDuration, { Size = UDim2.fromScale(1, 1) }, Enum.EasingStyle.Linear)
+end
+local function stopHold()
+holding = false
+if holdTween then
+holdTween:Cancel()
+holdTween = nil
+end
+fill.Size = UDim2.fromScale(0, 1)
+end
+
+table.insert(connections, prompt.PromptButtonHoldBegan:Connect(startHold))
+table.insert(connections, prompt.PromptButtonHoldEnded:Connect(stopHold))
+table.insert(connections, prompt.Triggered:Connect(stopHold))
+table.insert(connections, prompt.TriggerEnded:Connect(stopHold))
+
+
+if inputType == Enum.ProximityPromptInputType.Keyboard then
+table.insert(connections, UserInputService.InputBegan:Connect(function(input)
+if input.KeyCode == prompt.KeyboardKeyCode then
+startHold()
+end
+end))
+table.insert(connections, UserInputService.InputEnded:Connect(function(input)
+if input.KeyCode == prompt.KeyboardKeyCode then
+stopHold()
+end
+end))
+end
+
+
+if inputType == Enum.ProximityPromptInputType.Touch or prompt.ClickablePrompt then
+local hit = Instance.new("TextButton")
+hit.BackgroundTransparency = 1
+hit.Text = ""
+hit.Size = UDim2.fromScale(1, 1)
+hit.ZIndex = 20
+hit.Parent = content
+table.insert(connections, hit.InputBegan:Connect(function(input)
+if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1)
+and input.UserInputState ~= Enum.UserInputState.Change then
+prompt:InputHoldBegin()
+end
+end))
+table.insert(connections, hit.InputEnded:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+prompt:InputHoldEnd()
+end
+end))
+end
+
+
+table.insert(connections, RunService.Heartbeat:Connect(function()
+local now = describe(prompt)
+if action.Text ~= now.Action then
+action.Text = now.Action
+end
+if object.Text ~= now.Object then
+object.Text = now.Object
+end
+if sub.Text ~= now.Sub then
+sub.Text = now.Sub
+end
+if action.TextColor3 ~= now.Color then
+action.TextColor3 = now.Color
+fill.BackgroundColor3 = now.Color
+panel.SetBorder(now.Color)
+end
+end))
+
+UI.tween(group, 0.15, { GroupTransparency = 0 })
+badgeText.TextColor3 = Theme.Text
+
+prompt.PromptHidden:Wait()
+
+for _, c in connections do
+c:Disconnect()
+end
+stopHold()
+local fade = UI.tween(group, 0.12, { GroupTransparency = 1 })
+fade.Completed:Wait()
+billboard:Destroy()
+end
+
+function Prompts.init(c)
+ctx = c
+player = c.player
+
+local screen = UI.screenGui("Prompts", 5)
+
+ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
+if prompt.Style == Enum.ProximityPromptStyle.Default then
+return
+end
+task.spawn(createPrompt, prompt, inputType, screen)
+end)
+
+startFilter()
+end
+
+return Prompts
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">Shop</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local UI = require(Shared:WaitForChild("UI"))
+local Util = require(Shared:WaitForChild("Util"))
+local Trails = require(Shared:WaitForChild("Trails"))
+local Theme = UI.Theme
+
+local Shop = {}
+
+local window = nil
+local refresh = nil
+
+function Shop.open()
+if window then
+window.Root.Visible = true
+if refresh then
+refresh()
+end
+end
+end
+
+function Shop.close()
+if window then
+window.Root.Visible = false
+end
+end
+
+function Shop.toggle()
+if window then
+if window.Root.Visible then
+Shop.close()
+else
+Shop.open()
+end
+end
+end
+
+function Shop.init(ctx)
+local player = ctx.player
+
+window = UI.panel(ctx.gui, {
+Name = "TrailShop",
+Size = UDim2.fromOffset(660, 470),
+Position = UDim2.fromScale(0.5, 0.5),
+AnchorPoint = Vector2.new(0.5, 0.5),
+Color = Theme.Bg,
+Border = Theme.Accent,
+Cham = 14,
+Stroke = 4,
+Z = 20,
+})
+window.Root.Visible = false
+local content = window.Content
+
+UI.text(content, {
+Text = "TRAIL SHOP", Size = UDim2.fromOffset(300, 40), Position = UDim2.fromOffset(24, 14),
+TextSize = 28, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Accent, Z = 22,
+})
+UI.text(content, {
+Text = "Leave a glowing trail behind you. Earn gems from the crystals in your base.", Size = UDim2.fromOffset(470, 18),
+Position = UDim2.fromOffset(24, 50), TextSize = 13, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Muted, Z = 22,
+})
+local gemsLabel = UI.text(content, {
+Text = "0", Size = UDim2.fromOffset(150, 28), Position = UDim2.new(1, -230, 0, 18),
+TextSize = 22, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Right, TextColor = Theme.Gold, Z = 22,
+})
+UI.gemIcon(content, 28, UDim2.new(1, -74, 0, 18), Theme.Border)
+UI.button(content, {
+Text = "X", Size = UDim2.fromOffset(36, 36), Position = UDim2.new(1, -46, 0, 12),
+Color = Theme.Bg3, Border = Theme.Red, TextSize = 18, Z = 22,
+OnClick = Shop.close,
+})
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Name = "List"
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.Size = UDim2.new(1, -40, 1, -92)
+scroll.Position = UDim2.fromOffset(20, 76)
+scroll.ScrollBarThickness = 6
+scroll.ScrollBarImageColor3 = Theme.Accent
+scroll.CanvasSize = UDim2.new()
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+scroll.ZIndex = 22
+scroll.Parent = content
+
+local grid = Instance.new("UIGridLayout")
+grid.CellSize = UDim2.fromOffset(192, 150)
+grid.CellPadding = UDim2.fromOffset(10, 10)
+grid.SortOrder = Enum.SortOrder.LayoutOrder
+grid.Parent = scroll
+local pad = Instance.new("UIPadding")
+pad.PaddingRight = UDim.new(0, 8)
+pad.PaddingBottom = UDim.new(0, 8)
+pad.Parent = scroll
+
+local cards = {}
+
+local function act(action, id)
+task.spawn(function()
+local ok, message = ctx.Remotes.ShopAction:InvokeServer(action, id)
+ctx.Toast.show(tostring(message or ""), if ok then "good" else "bad")
+refresh()
+end)
+end
+
+for order, def in Trails.List do
+local card = UI.panel(scroll, {
+Name = def.Id, Size = UDim2.fromOffset(192, 150), Color = Theme.Bg2, Border = Theme.Bg3, Cham = 9, Stroke = 2, Z = 23, LayoutOrder = order,
+})
+
+local preview = Instance.new("Frame")
+preview.Name = "Preview"
+preview.BorderSizePixel = 0
+preview.BackgroundColor3 = Color3.new(1, 1, 1)
+preview.Size = UDim2.new(1, -28, 0, 28)
+preview.Position = UDim2.fromOffset(14, 14)
+preview.ZIndex = 26
+preview.Parent = card.Content
+local gradient = Instance.new("UIGradient")
+gradient.Color = Trails.sequence(def)
+gradient.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.7) })
+gradient.Parent = preview
+local tip = Instance.new("Frame")
+tip.BorderSizePixel = 0
+tip.AnchorPoint = Vector2.new(0.5, 0.5)
+tip.Size = UDim2.fromOffset(20, 20)
+tip.Rotation = 45
+tip.BackgroundColor3 = def.Colors[1][2]
+tip.Position = UDim2.new(0, 14, 0, 14 + 14)
+tip.ZIndex = 27
+tip.Parent = card.Content
+
+UI.text(card.Content, {
+Text = def.Name, Size = UDim2.new(1, -20, 0, 22), Position = UDim2.fromOffset(10, 50),
+TextSize = 17, Font = UI.FontBlack, Z = 26,
+})
+local priceLabel = UI.text(card.Content, {
+Text = "", Size = UDim2.new(1, -20, 0, 18), Position = UDim2.fromOffset(10, 72),
+TextSize = 14, TextColor = Theme.Gold, Z = 26,
+})
+local button = UI.button(card.Content, {
+Text = "BUY", Size = UDim2.new(1, -28, 0, 36), Position = UDim2.new(0, 14, 1, -48),
+Color = Theme.Bg3, Border = Theme.Gold, TextSize = 15, Z = 26,
+OnClick = function()
+local owned = Util.setFromList(Util.split(player:GetAttribute("Trails")))
+if player:GetAttribute("Equipped") == def.Id then
+act("Unequip", def.Id)
+elseif owned[def.Id] then
+act("Equip", def.Id)
+else
+act("Buy", def.Id)
+end
+end,
+})
+cards[def.Id] = { Card = card, Price = priceLabel, Button = button, Def = def }
+end
+
+refresh = function()
+gemsLabel.Text = Util.comma(player:GetAttribute("Gems") or 0)
+local owned = Util.setFromList(Util.split(player:GetAttribute("Trails")))
+local equipped = player:GetAttribute("Equipped") or ""
+local gems = player:GetAttribute("Gems") or 0
+for id, c in cards do
+if equipped == id then
+c.Price.Text = "EQUIPPED"
+c.Price.TextColor3 = Theme.Green
+c.Button.SetText("UNEQUIP")
+c.Button.SetEnabled(true)
+c.Button.SetColors(Theme.Bg3, nil, Theme.Green)
+c.Card.SetBorder(Theme.Green)
+elseif owned[id] then
+c.Price.Text = "OWNED"
+c.Price.TextColor3 = Theme.Border
+c.Button.SetText("EQUIP")
+c.Button.SetEnabled(true)
+c.Button.SetColors(Theme.Bg3, nil, Theme.Border)
+c.Card.SetBorder(Theme.Bg3)
+else
+c.Price.Text = if c.Def.Price == 0 then "FREE" else (Util.comma(c.Def.Price) .. " gems")
+c.Price.TextColor3 = Theme.Gold
+c.Card.SetBorder(Theme.Bg3)
+if gems >= c.Def.Price then
+c.Button.SetText("BUY")
+c.Button.SetEnabled(true)
+c.Button.SetColors(Theme.Bg3, nil, Theme.Gold)
+else
+c.Button.SetText("NEED MORE")
+c.Button.SetEnabled(false)
+end
+end
+end
+end
+
+for _, name in { "Gems", "Trails", "Equipped" } do
+player:GetAttributeChangedSignal(name):Connect(function()
+if window.Root.Visible then
+refresh()
+end
+end)
+end
+
+ctx.Remotes.OpenShop.OnClientEvent:Connect(Shop.open)
+refresh()
+end
+
+return Shop
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">Toast</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local UI = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("UI"))
+local Theme = UI.Theme
+
+local Toast = {}
+
+local container = nil
+local counter = 0
+
+local KIND_COLORS = {
+good = Theme.Green,
+bad = Theme.Red,
+warn = Theme.Gold,
+info = Theme.Border,
+}
+
+function Toast.show(text, kind)
+if not container then
+return
+end
+counter += 1
+local color = KIND_COLORS[kind or "info"] or Theme.Border
+
+local group = Instance.new("CanvasGroup")
+group.Name = "Toast"
+group.BackgroundTransparency = 1
+group.BorderSizePixel = 0
+group.Size = UDim2.new(1, 0, 0, 46)
+group.LayoutOrder = counter
+group.GroupTransparency = 1
+group.Parent = container
+
+local panel = UI.panel(group, { Size = UDim2.fromScale(1, 1), Color = Theme.Bg, Border = color, Cham = 7, Stroke = 2 })
+UI.text(panel.Content, {
+Text = text,
+Size = UDim2.new(1, -24, 1, 0),
+Position = UDim2.fromOffset(12, 0),
+TextSize = 15,
+Wrapped = true,
+})
+
+UI.tween(group, 0.18, { GroupTransparency = 0 })
+
+
+local kids = {}
+for _, c in container:GetChildren() do
+if c:IsA("CanvasGroup") then
+table.insert(kids, c)
+end
+end
+table.sort(kids, function(a, b)
+return a.LayoutOrder < b.LayoutOrder
+end)
+while #kids > 5 do
+table.remove(kids, 1):Destroy()
+end
+
+task.delay(3.8, function()
+if group.Parent then
+local t = UI.tween(group, 0.35, { GroupTransparency = 1 })
+t.Completed:Connect(function()
+group:Destroy()
+end)
+end
+end)
+end
+
+function Toast.init(ctx)
+container = Instance.new("Frame")
+container.Name = "Toasts"
+container.BackgroundTransparency = 1
+container.Size = UDim2.fromOffset(440, 320)
+container.Position = UDim2.new(0.5, 0, 0, 74)
+container.AnchorPoint = Vector2.new(0.5, 0)
+container.Parent = ctx.gui
+
+local layout = Instance.new("UIListLayout")
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.VerticalAlignment = Enum.VerticalAlignment.Top
+layout.Padding = UDim.new(0, 6)
+layout.Parent = container
+
+ctx.Remotes.Notify.OnClientEvent:Connect(function(text, kind)
+Toast.show(tostring(text), kind)
+end)
+
+
+local banner = UI.panel(ctx.gui, {
+Name = "Announcement",
+Size = UDim2.fromOffset(560, 64),
+Position = UDim2.new(0.5, 0, 0, -90),
+AnchorPoint = Vector2.new(0.5, 0),
+Color = Theme.Bg,
+Border = Theme.Gold,
+Cham = 10,
+Stroke = 3,
+})
+local bannerText = UI.text(banner.Content, {
+Text = "",
+Size = UDim2.new(1, -30, 1, 0),
+Position = UDim2.fromOffset(15, 0),
+TextSize = 20,
+Font = UI.FontBlack,
+TextColor = Theme.Gold,
+Wrapped = true,
+})
+local token = 0
+ctx.Remotes.Announce.OnClientEvent:Connect(function(text)
+token += 1
+local mine = token
+bannerText.Text = tostring(text)
+UI.tween(banner.Root, 0.35, { Position = UDim2.new(0.5, 0, 0, 16) }, Enum.EasingStyle.Back)
+task.delay(7, function()
+if token == mine then
+UI.tween(banner.Root, 0.35, { Position = UDim2.new(0.5, 0, 0, -90) })
+end
+end)
+end)
+end
+
+return Toast
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">Workout</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local UI = require(Shared:WaitForChild("UI"))
+local Config = require(Shared:WaitForChild("Config"))
+local Theme = UI.Theme
+
+local Workout = {}
+
+function Workout.init(ctx)
+local active = false
+local lastPress = 0
+
+local panel = UI.panel(ctx.gui, {
+Name = "Workout", Size = UDim2.fromOffset(520, 196), Position = UDim2.new(0.5, 0, 1, -24), AnchorPoint = Vector2.new(0.5, 1),
+Color = Theme.Bg, Border = Theme.Green, Cham = 12, Stroke = 3, Z = 10,
+})
+panel.Root.Visible = false
+local content = panel.Content
+
+local title = UI.text(content, {
+Text = "WORKOUT", Size = UDim2.new(1, -150, 0, 28), Position = UDim2.fromOffset(20, 10),
+TextSize = 22, Font = UI.FontBlack, XAlign = Enum.TextXAlignment.Left, Z = 12,
+})
+local sub = UI.text(content, {
+Text = "", Size = UDim2.new(1, -150, 0, 18), Position = UDim2.fromOffset(20, 38),
+TextSize = 13, XAlign = Enum.TextXAlignment.Left, TextColor = Theme.Muted, Z = 12,
+})
+UI.button(content, {
+Text = "STOP [X]", Size = UDim2.fromOffset(110, 34), Position = UDim2.new(1, -126, 0, 12),
+Color = Theme.Bg3, Border = Theme.Red, TextSize = 14, Z = 12,
+OnClick = function()
+ctx.Remotes.WorkoutStop:FireServer()
+end,
+})
+
+
+local track = UI.panel(content, {
+Name = "Track", Size = UDim2.new(1, -40, 0, 34), Position = UDim2.fromOffset(20, 68),
+Color = Color3.fromRGB(18, 20, 38), Border = Theme.Bg3, Cham = 6, Stroke = 2, Shine = false, Z = 12,
+})
+local lane = Instance.new("Frame")
+lane.Name = "Lane"
+lane.BackgroundTransparency = 1
+lane.Size = UDim2.new(1, -16, 1, 0)
+lane.Position = UDim2.fromOffset(8, 0)
+lane.ZIndex = 16
+lane.Parent = track.Content
+
+local function zone(width, color, z)
+local f = Instance.new("Frame")
+f.BorderSizePixel = 0
+f.AnchorPoint = Vector2.new(0.5, 0.5)
+f.Position = UDim2.fromScale(0.5, 0.5)
+f.Size = UDim2.new(width, 0, 1, -10)
+f.BackgroundColor3 = color
+f.ZIndex = z
+f.Parent = lane
+return f
+end
+zone(Config.GymGoodZone, Theme.Gold:Lerp(Color3.new(0, 0, 0), 0.35), 17)
+local perfect = zone(Config.GymPerfectZone, Theme.Green, 18)
+
+local marker = Instance.new("Frame")
+marker.Name = "Marker"
+marker.BorderSizePixel = 0
+marker.AnchorPoint = Vector2.new(0.5, 0.5)
+marker.Size = UDim2.fromOffset(18, 18)
+marker.Rotation = 45
+marker.BackgroundColor3 = Color3.new(1, 1, 1)
+marker.Position = UDim2.fromScale(0, 0.5)
+marker.ZIndex = 20
+marker.Parent = lane
+local markerLine = Instance.new("Frame")
+markerLine.BorderSizePixel = 0
+markerLine.AnchorPoint = Vector2.new(0.5, 0.5)
+markerLine.Size = UDim2.new(0, 3, 1, 4)
+markerLine.Position = UDim2.fromScale(0, 0.5)
+markerLine.BackgroundColor3 = Color3.new(1, 1, 1)
+markerLine.ZIndex = 19
+markerLine.Parent = lane
+
+local liftButton = UI.button(content, {
+Text = "LIFT  [SPACE]", Size = UDim2.new(1, -40, 0, 56), Position = UDim2.fromOffset(20, 118),
+Color = Color3.fromRGB(40, 110, 80), Border = Theme.Green, TextSize = 22, Font = UI.FontBlack, Cham = 9, Z = 12,
+})
+
+local feedback = UI.text(ctx.gui, {
+Text = "", Size = UDim2.fromOffset(420, 44), Position = UDim2.new(0.5, 0, 1, -250), AnchorPoint = Vector2.new(0.5, 1),
+TextSize = 32, Font = UI.FontBlack, Z = 30,
+})
+feedback.TextStrokeTransparency = 0.2
+feedback.TextStrokeColor3 = Color3.fromRGB(10, 10, 25)
+feedback.Visible = false
+local feedbackToken = 0
+
+local function press()
+if not active then
+return
+end
+local now = workspace:GetServerTimeNow()
+if now - lastPress < Config.GymRepCooldown * 0.8 then
+return
+end
+lastPress = now
+ctx.Remotes.WorkoutRep:FireServer(now)
+liftButton.SetEnabled(false)
+task.delay(Config.GymRepCooldown, function()
+if active then
+liftButton.SetEnabled(true)
+end
+end)
+end
+
+
+liftButton.Button.MouseButton1Click:Connect(press)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+if not active or processed then
+return
+end
+if input.KeyCode == Enum.KeyCode.Space then
+press()
+elseif input.KeyCode == Enum.KeyCode.X then
+ctx.Remotes.WorkoutStop:FireServer()
+end
+end)
+
+RunService.RenderStepped:Connect(function()
+if not active then
+return
+end
+local pos = Config.GymBarPosition(workspace:GetServerTimeNow())
+marker.Position = UDim2.fromScale(pos, 0.5)
+markerLine.Position = UDim2.fromScale(pos, 0.5)
+end)
+
+local function show(text, color)
+feedbackToken += 1
+local mine = feedbackToken
+feedback.Text = text
+feedback.TextColor3 = color
+feedback.Visible = true
+feedback.Position = UDim2.new(0.5, 0, 1, -230)
+UI.tween(feedback, 0.5, { Position = UDim2.new(0.5, 0, 1, -262) })
+task.delay(0.9, function()
+if feedbackToken == mine then
+feedback.Visible = false
+end
+end)
+end
+
+ctx.Remotes.WorkoutStart.OnClientEvent:Connect(function(info)
+active = true
+ctx.working = true
+lastPress = 0
+title.Text = string.upper(tostring(info.Name))
+sub.Text = "Hit the green zone for bonus strength. Chain hits for a combo!  +" .. tostring(info.Gain) .. " base"
+liftButton.SetEnabled(true)
+panel.Root.Visible = true
+end)
+
+ctx.Remotes.WorkoutEnd.OnClientEvent:Connect(function()
+active = false
+ctx.working = false
+panel.Root.Visible = false
+feedback.Visible = false
+end)
+
+ctx.Remotes.WorkoutResult.OnClientEvent:Connect(function(grade, gain, combo)
+if grade == "Perfect" then
+show("PERFECT  +" .. tostring(gain) .. (if combo > 1 then ("   x" .. tostring(combo)) else ""), Theme.Green)
+UI.tween(perfect, 0.1, { BackgroundColor3 = Color3.new(1, 1, 1) }).Completed:Connect(function()
+UI.tween(perfect, 0.25, { BackgroundColor3 = Theme.Green })
+end)
+elseif grade == "Good" then
+show("GOOD  +" .. tostring(gain) .. (if combo > 1 then ("   x" .. tostring(combo)) else ""), Theme.Gold)
+else
+show("MISS", Theme.Red)
+end
+end)
+end
+
+return Workout
+]]></ProtectedString></Properties></Item></Item><Item class="LocalScript" referent="RBX35"><Properties><string name="Name">Main</string><ProtectedString name="Source"><![CDATA[--!nonstrict
+
+
+
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+
+
+
+local messageLines = {}
+local messageGui = nil
+local messageBody = nil
+
+local function showProblem(text)
+table.insert(messageLines, text)
+if not messageGui then
+messageGui = Instance.new("ScreenGui")
+messageGui.Name = "StealACrystalClientError"
+messageGui.ResetOnSpawn = false
+messageGui.IgnoreGuiInset = true
+messageGui.DisplayOrder = 999
+
+local box = Instance.new("TextButton")
+box.Text = ""
+box.AutoButtonColor = false
+box.AnchorPoint = Vector2.new(0.5, 1)
+box.Position = UDim2.new(0.5, 0, 1, -24)
+box.Size = UDim2.new(0.9, 0, 0, 0)
+box.AutomaticSize = Enum.AutomaticSize.Y
+box.BackgroundColor3 = Color3.fromRGB(44, 12, 22)
+box.BorderSizePixel = 0
+box.Parent = messageGui
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(255, 95, 115)
+stroke.Thickness = 3
+stroke.Parent = box
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0, 12)
+pad.PaddingBottom = UDim.new(0, 12)
+pad.PaddingLeft = UDim.new(0, 14)
+pad.PaddingRight = UDim.new(0, 14)
+pad.Parent = box
+
+messageBody = Instance.new("TextLabel")
+messageBody.BackgroundTransparency = 1
+messageBody.Size = UDim2.new(1, 0, 0, 0)
+messageBody.AutomaticSize = Enum.AutomaticSize.Y
+messageBody.Font = Enum.Font.GothamMedium
+messageBody.TextSize = 16
+messageBody.TextWrapped = true
+messageBody.TextXAlignment = Enum.TextXAlignment.Left
+messageBody.TextColor3 = Color3.fromRGB(245, 245, 255)
+messageBody.Parent = box
+
+box.Activated:Connect(function()
+messageGui:Destroy()
+messageGui = nil
+messageLines = {}
+end)
+messageGui.Parent = playerGui
+end
+messageBody.Text = "Steal a Crystal (screen side):\n" .. table.concat(messageLines, "\n") .. "\n\n(tap to close)"
+end
+
+local function safe(label, fn)
+local ok, err = xpcall(fn, debug.traceback)
+if not ok then
+warn("[Steal a Crystal] " .. label .. " failed:\n" .. tostring(err))
+showProblem("- " .. label .. " failed: " .. string.sub(tostring(err), 1, 260))
+end
+return ok
+end
+
+
+
+
+local loaded = false
+task.delay(25, function()
+if not loaded then
+showProblem("- Still loading after 25 seconds. The game server probably did not start. "
+.. "In Roblox Studio open the Output window (View > Output) and check the red messages. "
+.. "Make sure you opened StealACrystal.rbxlx with File > Open from File.")
+end
+end)
+
+local Shared = ReplicatedStorage:WaitForChild("Shared", 20)
+local Remotes = ReplicatedStorage:WaitForChild("Remotes", 20)
+local Client = script.Parent:WaitForChild("Client", 20)
+if not (Shared and Remotes and Client) then
+local missing = {}
+if not Shared then table.insert(missing, "ReplicatedStorage.Shared") end
+if not Remotes then table.insert(missing, "ReplicatedStorage.Remotes (made by the server)") end
+if not Client then table.insert(missing, "StarterPlayerScripts.Client") end
+showProblem("- Could not find: " .. table.concat(missing, ", "))
+return
+end
+
+pcall(function()
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+end)
+
+local UI
+if not safe("loading the UI kit", function()
+UI = require(Shared:WaitForChild("UI", 10))
+require(Shared:WaitForChild("Remotes", 10))
+end) then
+return
+end
+
+local gui = UI.screenGui("StealACrystalUI", 2)
+UI.autoScale(gui)
+
+local ctx = {
+player = player,
+gui = gui,
+Remotes = require(Shared.Remotes),
+working = false,
+}
+
+local ORDER = { "Toast", "HUD", "Shop", "Workout", "Prompts" }
+for _, name in ORDER do
+safe("loading " .. name, function()
+ctx[name] = require(Client:WaitForChild(name, 10))
+end)
+end
+for _, name in ORDER do
+if ctx[name] then
+safe(name .. " setup", function()
+ctx[name].init(ctx)
+end)
+end
+end
+
+loaded = true
+]]></ProtectedString></Properties></Item></Item><Item class="StarterCharacterScripts" referent="RBX37"><Properties><string name="Name">StarterCharacterScripts</string></Properties></Item></Item>
+</roblox>
